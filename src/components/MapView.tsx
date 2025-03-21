@@ -5,6 +5,7 @@ import Map from '@arcgis/core/Map';
 import MapView from '@arcgis/core/views/MapView';
 import FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import IdentityManager from '@arcgis/core/identity/IdentityManager';
+import PortalItem from "@arcgis/core/portal/PortalItem.js";
 
 export default function MapViewComponent() {
   const mapDivRef = useRef<HTMLDivElement>(null);
@@ -26,7 +27,6 @@ export default function MapViewComponent() {
         console.log('ArcGIS token acquired:', myToken);
 
         // Step 2: Register the token so ArcGIS library uses it for relevant requests
-        // a) If your FeatureLayer is hosted at https://cssl.maps.arcgis.com, specify that
         IdentityManager.registerToken({
           server: 'https://arcgis.curtin.edu.au', // or your enterprise URL
           token: myToken,
@@ -45,14 +45,20 @@ export default function MapViewComponent() {
     function initializeMap() {
       console.log('Initializing map...');
       const map = new Map({
-        basemap: 'streets',
+        basemap:
+        {
+          portalItem: {
+            id: "077e1ceeb4a24db6acd901fb2cc5af54",
+          },
+        },
       });
+
 
       const view = new MapView({
         container: mapDivRef.current,
         map: map,
-        center: [-117.1956, 34.056],
-        zoom: 16,
+        center: [115.894, -32.005],
+        zoom: 15,
       });
 
       // Example: secure feature service that requires the token
@@ -71,7 +77,7 @@ export default function MapViewComponent() {
 
           if (carparkGraphic) {
             console.log('Clicked carpark:', carparkGraphic.attributes);
-            // ... your logic ...
+            // ... TODO Insert logic ...
           }
         } catch (error) {
           console.error('Map click error:', error);

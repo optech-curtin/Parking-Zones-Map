@@ -57,8 +57,7 @@ CLIENT_ID="YourRegisteredAppId"
 CLIENT_SECRET="YourAppSecret"
 ```
 
-Then reference them in server-side code:
-
+Then reference them in server-side code: 10.130.209.17
 ```ts
 const clientId = process.env.ARC_CLIENT_ID;
 const clientSecret = process.env.ARC_CLIENT_SECRET;
