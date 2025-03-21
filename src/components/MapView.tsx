@@ -5,11 +5,11 @@ import Map from '@arcgis/core/Map';
 import MapView from '@arcgis/core/views/MapView';
 import FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import IdentityManager from '@arcgis/core/identity/IdentityManager';
-import PortalItem from "@arcgis/core/portal/PortalItem.js";
+import esriConfig from "@arcgis/core/config";
 
 export default function MapViewComponent() {
   const mapDivRef = useRef<HTMLDivElement>(null);
-
+  
   useEffect(() => {
     if (!mapDivRef.current) return;
 
@@ -44,13 +44,15 @@ export default function MapViewComponent() {
 
     function initializeMap() {
       console.log('Initializing map...');
+      esriConfig.portalUrl = "https://arcgis.curtin.edu.au/portal";
+
       const map = new Map({
-        basemap:
-        {
-          portalItem: {
-            id: "077e1ceeb4a24db6acd901fb2cc5af54",
-          },
-        },
+        basemap: "streets-navigation-vector",
+        // {
+        //   portalItem: {
+        //     id: "077e1ceeb4a24db6acd901fb2cc5af54",
+        //   },
+        // },
       });
 
 
