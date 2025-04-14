@@ -23,19 +23,21 @@ export default function MapViewComponent() {
 
     function initializeMap() {
       esriConfig.portalUrl = "https://arcgis.curtin.edu.au/portal";
-      
+
       const webmap = new WebMap({
         portalItem: {
-          id: "34e3e14cea754a41a9b7f8455fef8c48",
+          id: "34e3e14cea754a41a9b7f8455fef8c48"
         }
       });
       
+
       const view = new MapView({
         container: mapDivRef.current,
         map: webmap,
         center: [115.894, -32.005],
         zoom: 14,
       });
+
 
       view.on('click', async (event) => {
         try {

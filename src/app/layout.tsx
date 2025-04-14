@@ -3,9 +3,10 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({
-  subsets: ["latin"],
   variable: "--font-inter",
+  subsets: ["latin"],
 });
+
 
 export const metadata: Metadata = {
   title: "Campus Planning - Parking",
@@ -19,7 +20,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} antialiased`}>
+      <body
+        className={`${inter.variable} ${inter.variable} antialiased`}
+      >
         {children}
       </body>
     </html>
