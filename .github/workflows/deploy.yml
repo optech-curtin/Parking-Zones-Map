@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Detect package manager
         id: detect-package-manager
         run: |
@@ -60,6 +62,7 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./out
+          retention-days: 1
 
   deploy:
     environment:
