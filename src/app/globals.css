@@ -24,3 +24,9 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Increase z-index of the login container above everything */
+.dialog{
+  z-index: 999999 !important;
+}
+

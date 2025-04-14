@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getArcGISToken } from '@/lib/arcgisToken';
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
     // Typically stored in environment variables
     const clientId = process.env.CLIENT_ID;
@@ -12,13 +12,13 @@ export async function GET(req: NextRequest) {
     }
 
     // Possibly from your older approach:
-    const refererUrl = 'https://arcgis.curtin.edu.au';
+    const refererUrl = 'https://arcgis.curtin.edu.au/';
     // Or if your enterprise portal is at a different domain, adjust accordingly
 
     const token = await getArcGISToken(clientId, clientSecret, refererUrl);
     return NextResponse.json({ token });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Error generating token:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 });
   }
 }
