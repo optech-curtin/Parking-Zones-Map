@@ -2,20 +2,13 @@
 
 import React from 'react';
 
-interface BayTypeCount {
-  type: string;
-  count: number;
-}
-
 interface SideMenuProps {
   isOpen: boolean;
   selectedParkingLot: string;
-  bayTypes: BayTypeCount[];
   onToggleMenu: () => void;
   onToggleCarpark: (isOpen: boolean) => void;
   carparkStatus: { [key: string]: boolean };
   closedBayCounts: { [key: string]: number };
-  setClosedBayCounts: (counts: { [key: string]: number }) => void;
   onResetAll: () => void;
 }
 
@@ -26,7 +19,6 @@ export default function SideMenu({
   onToggleCarpark,
   carparkStatus,
   closedBayCounts,
-  setClosedBayCounts,
   onResetAll
 }: SideMenuProps) {
   // If the carpark is not in the status map, it's open by default
@@ -88,7 +80,7 @@ export default function SideMenu({
             <div className="mt-4">
               <h3 className="font-semibold mb-2">Closed Bays Summary</h3>
               {Object.entries(closedBayCounts)
-                .filter(([_, count]) => count > 0)
+                .filter(([, count]) => count > 0)
                 .map(([type, count]) => (
                   <div key={type} className="flex justify-between items-center py-1">
                     <span>{type}</span>
