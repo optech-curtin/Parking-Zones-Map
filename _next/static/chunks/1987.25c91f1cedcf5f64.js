@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunk_N_E=self.webpackChunk_N_E||[]).push([[1987],{81987:(t,e,n)=>{n.d(e,{g:()=>r});let r=()=>[2,1,1,1,3].map(t=>{let e="";for(let n=0;n<t;n++)e+=((1+Math.random())*65536|0).toString(16).substring(1);return e}).join("-")}}]);
