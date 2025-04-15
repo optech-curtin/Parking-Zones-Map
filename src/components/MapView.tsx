@@ -15,40 +15,35 @@ interface BayTypeCount {
 
 export default function MapViewComponent() {
   const mapDivRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<MapView | null>(null);
   const [selectedParkingLot, setSelectedParkingLot] = useState<string>('');
   const [bayTypeCounts, setBayTypeCounts] = useState<BayTypeCount[]>([]);
   const [isMenuOpen, setIsMenuOpen] = useState(true);
   const [carparkStatus, setCarparkStatus] = useState<{ [key: string]: boolean }>({});
   const [closedBayCounts, setClosedBayCounts] = useState<{ [key: string]: number }>({});
-  const viewRef = useRef<MapView | null>(null);
-  const parkingLayerRef = useRef<FeatureLayer | null>(null);
   
   const toggleCarparkStatus = useCallback((parkingLot: string) => {
-    // Get the current status (true = closed, false = open)
-    const currentStatus = carparkStatus[parkingLot] ?? false;
-    const newStatus = !currentStatus;
-    
-    // Update carpark status
-    setCarparkStatus(prev => ({
-      ...prev,
-      [parkingLot]: newStatus
-    }));
+    setCarparkStatus(prev => {
+      const newStatus = { ...prev };
+      newStatus[parkingLot] = !newStatus[parkingLot];
+      return newStatus;
+    });
 
     // Update closed bay counts
     setClosedBayCounts(prev => {
       const newCounts = { ...prev };
       bayTypeCounts.forEach(({ type, count }) => {
-        if (newStatus) { // If closing the carpark
+        if (carparkStatus[parkingLot]) {
+          newCounts[type] = (newCounts[type] || 0) - count;
+        } else {
           newCounts[type] = (newCounts[type] || 0) + count;
-        } else { // If opening the carpark
-          newCounts[type] = Math.max(0, (newCounts[type] || 0) - count);
         }
       });
       return newCounts;
     });
-  }, [carparkStatus, bayTypeCounts]);
+  }, [bayTypeCounts, carparkStatus]);
 
-  // Initialize map
+  // Initialize map (runs once)
   useEffect(() => {
     if (!mapDivRef.current) return;
 
@@ -69,29 +64,28 @@ export default function MapViewComponent() {
 
     viewRef.current = view;
 
-    // Create and add the parking layer
-    const parkingLayer = new FeatureLayer({
-      url: "https://arcgis.curtin.edu.au/arcgis/rest/services/ParKam/ParKam/FeatureServer/4",
-      renderer: {
-        type: "simple",
-        symbol: {
-          type: "simple-fill",
-          color: [255, 255, 255, 0.5],
-          outline: {
-            color: [0, 0, 0, 1],
-            width: 1
-          }
-        }
+    // Cleanup function
+    return () => {
+      if (view) {
+        view.destroy();
       }
-    });
+    };
+  }, []);
 
-    parkingLayerRef.current = parkingLayer;
-    view.map.add(parkingLayer);
+  // Add click handlers (updates when toggleCarparkStatus changes)
+  useEffect(() => {
+    if (!viewRef.current) return;
 
-    // Add right-click handler
-    view.on('click', async (event) => {
+    const view = viewRef.current;
+
+    // Add click handler
+    const clickHandler = async (event: __esri.ViewClickEvent) => {
       if (event.button === 2) { // Right click
         try {
+          const parkingLayer = new FeatureLayer({
+            url: "https://arcgis.curtin.edu.au/arcgis/rest/services/ParKam/ParKam/FeatureServer/4"
+          });
+
           const query = parkingLayer.createQuery();
           query.geometry = event.mapPoint;
           query.spatialRelationship = "intersects";
@@ -100,8 +94,7 @@ export default function MapViewComponent() {
 
           if (result.features.length > 0) {
             const clickedFeature = result.features[0];
-            const parkinglot = clickedFeature.attributes.Zone;
-            console.log('Right clicked zone:', parkinglot);
+            const parkinglot = clickedFeature.attributes.Zone.trim();
             toggleCarparkStatus(parkinglot);
           }
         } catch (error) {
@@ -109,6 +102,10 @@ export default function MapViewComponent() {
         }
       } else { // Left click
         try {
+          const parkingLayer = new FeatureLayer({
+            url: "https://arcgis.curtin.edu.au/arcgis/rest/services/ParKam/ParKam/FeatureServer/4"
+          });
+
           const query = parkingLayer.createQuery();
           query.geometry = event.mapPoint;
           query.spatialRelationship = "intersects";
@@ -117,7 +114,7 @@ export default function MapViewComponent() {
 
           if (result.features.length > 0) {
             const clickedFeature = result.features[0];
-            const parkinglot = clickedFeature.attributes.Zone;
+            const parkinglot = clickedFeature.attributes.Zone.trim();
             console.log('Clicked zone:', parkinglot);
             setSelectedParkingLot(parkinglot);
 
@@ -138,12 +135,12 @@ export default function MapViewComponent() {
 
             // Query both layers for features with matching zone
             const underBaysQuery = underBaysLayer.createQuery();
-            underBaysQuery.where = `parkinglot = '${parkinglot.trim()}'`;
+            underBaysQuery.where = `parkinglot = '${parkinglot}'`;
             underBaysQuery.returnGeometry = false;
             underBaysQuery.outFields = ['*'];
             
             const baysQuery = baysLayer.createQuery();
-            baysQuery.where = `parkinglot = '${parkinglot.trim()}'`;
+            baysQuery.where = `parkinglot = '${parkinglot}'`;
             baysQuery.returnGeometry = false;
             baysQuery.outFields = ['*'];
 
@@ -174,49 +171,59 @@ export default function MapViewComponent() {
           console.error('Map click error:', error);
         }
       }
-    });
+    };
 
-    // Add context menu handler
-    if (view.container) {
-      view.container.addEventListener('contextmenu', (event) => {
-        event.preventDefault();
-      });
-    }
+    const handle = view.on('click', clickHandler);
 
     // Cleanup function
     return () => {
-      if (view) {
-        view.destroy();
-      }
+      handle.remove();
     };
   }, [toggleCarparkStatus]);
 
   // Update renderer when carpark status changes
   useEffect(() => {
-    if (!parkingLayerRef.current) return;
-    parkingLayerRef.current.renderer = {
-      type: "unique-value" as const,
-      field: "Zone",
-      uniqueValueInfos: Object.entries(carparkStatus).map(([zone, isClosed]) => ({
-        value: zone,
-        symbol: {
+    if (!viewRef.current) return;
+
+    const view = viewRef.current;
+    const parkingLayer = new FeatureLayer({
+      url: "https://arcgis.curtin.edu.au/arcgis/rest/services/ParKam/ParKam/FeatureServer/4",
+      renderer: {
+        type: "unique-value" as const,
+        field: "Zone",
+        uniqueValueInfos: Object.entries(carparkStatus).map(([zone, isClosed]) => ({
+          value: zone,
+          symbol: {
+            type: "simple-fill" as const,
+            color: isClosed ? [255, 0, 0, 0.5] : [255, 255, 255, 0.5],
+            outline: {
+              color: isClosed ? [255, 0, 0, 1] : [0, 0, 0, 1],
+              width: isClosed ? 2 : 1
+            }
+          }
+        })),
+        defaultSymbol: {
           type: "simple-fill" as const,
-          color: isClosed ? [255, 0, 0, 0.5] : [255, 255, 255, 0.5],
+          color: [255, 255, 255, 0.5],
           outline: {
-            color: isClosed ? [255, 0, 0, 1] : [0, 0, 0, 1],
-            width: isClosed ? 2 : 1
+            color: [0, 0, 0, 1],
+            width: 1
           }
         }
-      })),
-      defaultSymbol: {
-        type: "simple-fill" as const,
-        color: [255, 255, 255, 0.5],
-        outline: {
-          color: [0, 0, 0, 1],
-          width: 1
-        }
       }
-    };
+    });
+
+    // Remove existing parking layer if it exists
+    const existingLayer = view.map.layers.find(layer => 
+      layer.id === "parkingLayer"
+    );
+    if (existingLayer) {
+      view.map.remove(existingLayer);
+    }
+
+    // Add the new layer with updated renderer
+    parkingLayer.id = "parkingLayer";
+    view.map.add(parkingLayer);
   }, [carparkStatus]);
 
   const resetAllCarparks = () => {

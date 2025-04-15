@@ -44,12 +44,9 @@ jobs:
       - name: Build with Next.js
         run: |
           npm run build
-          # Create out directory and copy necessary files
-          mkdir -p out
-          cp -r .next/static out/_next/static
-          cp -r public/* out/ 2>/dev/null || true
-          cp -r .next/server out/_next/server
-          cp -r .next/server/pages out/
+          # Copy static assets to the correct location
+          mkdir -p out/_next/static
+          cp -r .next/static/* out/_next/static/
         env:
           PAGES_BASE_PATH: ${{ steps.setup_pages.outputs.base_path }}
 
