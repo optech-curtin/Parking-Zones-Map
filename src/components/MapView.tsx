@@ -18,10 +18,145 @@ export default function MapViewComponent() {
   const viewRef = useRef<MapView | null>(null);
   const [selectedParkingLot, setSelectedParkingLot] = useState<string>('');
   const [bayTypeCounts, setBayTypeCounts] = useState<BayTypeCount[]>([]);
-  const [isMenuOpen, setIsMenuOpen] = useState(true);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [carparkStatus, setCarparkStatus] = useState<{ [key: string]: boolean }>({});
   const [closedBayCounts, setClosedBayCounts] = useState<{ [key: string]: number }>({});
+  const [totalBayCounts, setTotalBayCounts] = useState<{ [key: string]: number }>({});
   
+  // Fetch all bay types when map loads
+  useEffect(() => {
+    const fetchAllBayTypes = async () => {
+      try {
+        // Create FeatureLayers for all services
+        const parkingLotsLayer = new FeatureLayer({
+          url: "https://arcgis.curtin.edu.au/arcgis/rest/services/ParKam/ParKam/FeatureServer/4"
+        });
+
+        const underBaysLayer = new FeatureLayer({
+          url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays_Under/FeatureServer/0"
+        });
+
+        const baysLayer = new FeatureLayer({
+          url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays/FeatureServer/0"
+        });
+
+        // Wait for all layers to load
+        await Promise.all([
+          parkingLotsLayer.load(),
+          underBaysLayer.load(),
+          baysLayer.load()
+        ]);
+
+        // Get all unique parking lots
+        const parkingLotsQuery = parkingLotsLayer.createQuery();
+        parkingLotsQuery.returnGeometry = false;
+        parkingLotsQuery.outFields = ['Zone'];
+        const parkingLotsResult = await parkingLotsLayer.queryFeatures(parkingLotsQuery);
+        const parkingLots = parkingLotsResult.features.map((f: __esri.Graphic) => f.attributes.Zone.trim());
+
+        // Calculate total bay type counts
+        const totalCounts: { [key: string]: number } = {};
+
+        // Query each parking lot's bays
+        for (const parkingLot of parkingLots) {
+          const underBaysQuery = underBaysLayer.createQuery();
+          underBaysQuery.where = `parkinglot = '${parkingLot}'`;
+          underBaysQuery.returnGeometry = false;
+          underBaysQuery.outFields = ['*'];
+          
+          const baysQuery = baysLayer.createQuery();
+          baysQuery.where = `parkinglot = '${parkingLot}'`;
+          baysQuery.returnGeometry = false;
+          baysQuery.outFields = ['*'];
+
+          // Execute queries
+          const [underBaysResult, baysResult] = await Promise.all([
+            underBaysLayer.queryFeatures(underBaysQuery),
+            baysLayer.queryFeatures(baysQuery)
+          ]);
+
+          // Combine all features
+          const allFeatures = [...underBaysResult.features, ...baysResult.features];
+
+          // Accumulate counts
+          allFeatures.forEach(feature => {
+            const bayType = feature.attributes.baytype || 'Unknown';
+            totalCounts[bayType] = (totalCounts[bayType] || 0) + 1;
+          });
+        }
+
+        console.log('Total bay counts:', totalCounts); // Debug log
+        setTotalBayCounts(totalCounts);
+      } catch (error) {
+        console.error('Error fetching all bay types:', error);
+      }
+    };
+
+    fetchAllBayTypes();
+  }, []);
+
+  // Update bay type counts when a parking lot is selected
+  useEffect(() => {
+    const fetchSelectedBayTypes = async () => {
+      if (!selectedParkingLot) return;
+
+      try {
+        // Create FeatureLayers for both parking bay services
+        const underBaysLayer = new FeatureLayer({
+          url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays_Under/FeatureServer/0"
+        });
+
+        const baysLayer = new FeatureLayer({
+          url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays/FeatureServer/0"
+        });
+
+        // Wait for both layers to load
+        await Promise.all([
+          underBaysLayer.load(),
+          baysLayer.load()
+        ]);
+
+        // Query features for selected parking lot
+        const underBaysQuery = underBaysLayer.createQuery();
+        underBaysQuery.where = `parkinglot = '${selectedParkingLot}'`;
+        underBaysQuery.returnGeometry = false;
+        underBaysQuery.outFields = ['*'];
+        
+        const baysQuery = baysLayer.createQuery();
+        baysQuery.where = `parkinglot = '${selectedParkingLot}'`;
+        baysQuery.returnGeometry = false;
+        baysQuery.outFields = ['*'];
+
+        // Execute queries
+        const [underBaysResult, baysResult] = await Promise.all([
+          underBaysLayer.queryFeatures(underBaysQuery),
+          baysLayer.queryFeatures(baysQuery)
+        ]);
+
+        // Combine all features
+        const allFeatures = [...underBaysResult.features, ...baysResult.features];
+
+        // Calculate bay type counts
+        const bayTypeCounts: { [key: string]: number } = {};
+        allFeatures.forEach(feature => {
+          const bayType = feature.attributes.baytype || 'Unknown';
+          bayTypeCounts[bayType] = (bayTypeCounts[bayType] || 0) + 1;
+        });
+
+        // Convert to array and sort by count
+        const sortedBayTypes: BayTypeCount[] = Object.entries(bayTypeCounts)
+          .map(([type, count]) => ({ type, count }))
+          .sort((a, b) => b.count - a.count);
+
+        setBayTypeCounts(sortedBayTypes);
+      } catch (error) {
+        console.error('Error fetching selected bay types:', error);
+      }
+    };
+
+    fetchSelectedBayTypes();
+  }, [selectedParkingLot]);
+
   const toggleCarparkStatus = useCallback((parkingLot: string) => {
     setCarparkStatus(prev => {
       const newStatus = { ...prev };
@@ -195,7 +330,7 @@ export default function MapViewComponent() {
           value: zone,
           symbol: {
             type: "simple-fill" as const,
-            color: isClosed ? [255, 0, 0, 0.5] : [255, 255, 255, 0.5],
+            color: isClosed ? [255, 0, 0, 0.5] : [255, 255, 255, 0],
             outline: {
               color: isClosed ? [255, 0, 0, 1] : [0, 0, 0, 1],
               width: isClosed ? 2 : 1
@@ -204,7 +339,7 @@ export default function MapViewComponent() {
         })),
         defaultSymbol: {
           type: "simple-fill" as const,
-          color: [255, 255, 255, 0.5],
+          color: [255, 255, 255, 0],
           outline: {
             color: [0, 0, 0, 1],
             width: 1
@@ -242,6 +377,7 @@ export default function MapViewComponent() {
         onToggleCarpark={() => toggleCarparkStatus(selectedParkingLot)}
         carparkStatus={carparkStatus}
         closedBayCounts={closedBayCounts}
+        totalBayCounts={totalBayCounts}
         onResetAll={resetAllCarparks}
       />
       <div ref={mapDivRef} className="w-full h-screen" />
