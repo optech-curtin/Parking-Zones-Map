@@ -44,12 +44,12 @@ jobs:
       - name: Build with Next.js
         run: |
           npm run build
-          # Copy the entire .next directory to maintain the static file structure
-          cp -r .next out/
-          # Copy public directory if it exists
-          if [ -d "public" ]; then
-            cp -r public/* out/
-          fi
+          # Create out directory and copy necessary files
+          mkdir -p out
+          cp -r .next/static out/_next/static
+          cp -r public/* out/ 2>/dev/null || true
+          cp -r .next/server out/_next/server
+          cp -r .next/server/pages out/
         env:
           PAGES_BASE_PATH: ${{ steps.setup_pages.outputs.base_path }}
 

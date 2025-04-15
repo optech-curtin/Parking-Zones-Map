@@ -6,6 +6,9 @@ import WebMap from '@arcgis/core/WebMap';
 import FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import esriConfig from "@arcgis/core/config";
 import ParkingInfoTable from './ParkingInfoTable';
+import OAuthInfo from "@arcgis/core/identity/OAuthInfo";
+import esriId from "@arcgis/core/identity/IdentityManager";
+import Portal from "@arcgis/core/portal/Portal";
 
 interface BayTypeCount {
   type: string;
@@ -19,100 +22,119 @@ export default function MapViewComponent() {
   
   useEffect(() => {
     if (!mapDivRef.current) return;
-        initializeMap();
+    initializeMap();
 
     function initializeMap() {
       esriConfig.portalUrl = "https://arcgis.curtin.edu.au/portal";
 
-      const webmap = new WebMap({
-        portalItem: {
-          id: "34e3e14cea754a41a9b7f8455fef8c48"
-        }
-      });
-      
-
-      const view = new MapView({
-        container: mapDivRef.current,
-        map: webmap,
-        center: [115.894, -32.005],
-        zoom: 14,
+      const oAuthInfo = new OAuthInfo({
+        appId: "r9sveyBNqL0gUIXl",
+        portalUrl: "https://arcgis.curtin.edu.au/portal"
       });
 
+      esriId.registerOAuthInfos([oAuthInfo]);
 
-      view.on('click', async (event) => {
-        try {
-          
-          // Create a new FeatureLayer pointing to sublayer 4
-          const parkingLayer = new FeatureLayer({
-            url: "https://arcgis.curtin.edu.au/arcgis/rest/services/ParKam/ParKam/FeatureServer/4"
+      // Check if user is already signed in
+      esriId.checkSignInStatus(oAuthInfo.portalUrl + "/sharing")
+        .then(() => {
+          const portal = new Portal({
+            authMode: "immediate"
+          });
+          portal.url = oAuthInfo.portalUrl;
+          return portal.load();
+        })
+        .then(() => {
+          // Initialize the map after authentication
+          const webmap = new WebMap({
+            portalItem: {
+              id: "34e3e14cea754a41a9b7f8455fef8c48"
+            }
           });
 
-          // Create a query for the clicked location
-          const query = parkingLayer.createQuery();
-          query.geometry = event.mapPoint;
-          query.spatialRelationship = "intersects";
-          
-          const result = await parkingLayer.queryFeatures(query);
+          const view = new MapView({
+            container: mapDivRef.current,
+            map: webmap,
+            center: [115.894, -32.005],
+            zoom: 14,
+          });
 
-          if (result.features.length > 0) {
-            const clickedFeature = result.features[0];
-            const parkinglot = clickedFeature.attributes.Zone.trim();
-            console.log('Clicked zone:', parkinglot);
-            setSelectedParkingLot(parkinglot);
+          view.on('click', async (event) => {
+            try {
+              // Create a new FeatureLayer pointing to sublayer 4
+              const parkingLayer = new FeatureLayer({
+                url: "https://arcgis.curtin.edu.au/arcgis/rest/services/ParKam/ParKam/FeatureServer/4"
+              });
 
-            // Create FeatureLayers for both parking bay services
-            const underBaysLayer = new FeatureLayer({
-              url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays_Under/FeatureServer/0"
-            });
+              // Create a query for the clicked location
+              const query = parkingLayer.createQuery();
+              query.geometry = event.mapPoint;
+              query.spatialRelationship = "intersects";
+              
+              const result = await parkingLayer.queryFeatures(query);
 
-            const baysLayer = new FeatureLayer({
-              url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays/FeatureServer/0"
-            });
+              if (result.features.length > 0) {
+                const clickedFeature = result.features[0];
+                const parkinglot = clickedFeature.attributes.Zone.trim();
+                console.log('Clicked zone:', parkinglot);
+                setSelectedParkingLot(parkinglot);
 
-            // Wait for both layers to load
-            await Promise.all([
-              underBaysLayer.load(),
-              baysLayer.load()
-            ]);
+                // Create FeatureLayers for both parking bay services
+                const underBaysLayer = new FeatureLayer({
+                  url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays_Under/FeatureServer/0"
+                });
 
-            // Query both layers for features with matching zone
-            const underBaysQuery = underBaysLayer.createQuery();
-            underBaysQuery.where = `parkinglot = '${parkinglot}'`;
-            underBaysQuery.returnGeometry = false;
-            underBaysQuery.outFields = ['*'];
-            
-            const baysQuery = baysLayer.createQuery();
-            baysQuery.where = `parkinglot = '${parkinglot}'`;
-            baysQuery.returnGeometry = false;
-            baysQuery.outFields = ['*'];
+                const baysLayer = new FeatureLayer({
+                  url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays/FeatureServer/0"
+                });
 
-            // Execute queries
-            const [underBaysResult, baysResult] = await Promise.all([
-              underBaysLayer.queryFeatures(underBaysQuery),
-              baysLayer.queryFeatures(baysQuery)
-            ]);
+                // Wait for both layers to load
+                await Promise.all([
+                  underBaysLayer.load(),
+                  baysLayer.load()
+                ]);
 
-            // Combine all features
-            const allFeatures = [...underBaysResult.features, ...baysResult.features];
+                // Query both layers for features with matching zone
+                const underBaysQuery = underBaysLayer.createQuery();
+                underBaysQuery.where = `parkinglot = '${parkinglot}'`;
+                underBaysQuery.returnGeometry = false;
+                underBaysQuery.outFields = ['*'];
+                
+                const baysQuery = baysLayer.createQuery();
+                baysQuery.where = `parkinglot = '${parkinglot}'`;
+                baysQuery.returnGeometry = false;
+                baysQuery.outFields = ['*'];
 
-            // Calculate bay type counts using an object instead of Map
-            const bayTypeCounts: { [key: string]: number } = {};
-            allFeatures.forEach(feature => {
-              const bayType = feature.attributes.baytype || 'Unknown';
-              bayTypeCounts[bayType] = (bayTypeCounts[bayType] || 0) + 1;
-            });
+                // Execute queries
+                const [underBaysResult, baysResult] = await Promise.all([
+                  underBaysLayer.queryFeatures(underBaysQuery),
+                  baysLayer.queryFeatures(baysQuery)
+                ]);
 
-            // Convert to array and sort by count
-            const sortedBayTypes: BayTypeCount[] = Object.entries(bayTypeCounts)
-              .map(([type, count]) => ({ type, count }))
-              .sort((a, b) => b.count - a.count);
+                // Combine all features
+                const allFeatures = [...underBaysResult.features, ...baysResult.features];
 
-            setBayTypeCounts(sortedBayTypes);
-          }
-        } catch (error) {
-          console.error('Map click error:', error);
-        }
-      });
+                // Calculate bay type counts using an object instead of Map
+                const bayTypeCounts: { [key: string]: number } = {};
+                allFeatures.forEach(feature => {
+                  const bayType = feature.attributes.baytype || 'Unknown';
+                  bayTypeCounts[bayType] = (bayTypeCounts[bayType] || 0) + 1;
+                });
+
+                // Convert to array and sort by count
+                const sortedBayTypes: BayTypeCount[] = Object.entries(bayTypeCounts)
+                  .map(([type, count]) => ({ type, count }))
+                  .sort((a, b) => b.count - a.count);
+
+                setBayTypeCounts(sortedBayTypes);
+              }
+            } catch (error) {
+              console.error('Map click error:', error);
+            }
+          });
+        })
+        .catch((error) => {
+          console.error('Authentication error:', error);
+        });
     }
   }, []);
 
