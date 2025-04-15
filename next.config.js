@@ -1,8 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'export',
-  basePath: '/campus-parking-planning',
-  assetPrefix: '/campus-parking-planning/',
+  basePath: '/ArcGIS_WebApp_Integration',
+  assetPrefix: '/ArcGIS_WebApp_Integration/',
   images: {
     unoptimized: true,
   },
