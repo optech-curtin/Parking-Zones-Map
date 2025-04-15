@@ -22,7 +22,6 @@ interface SideMenuProps {
 export default function SideMenu({
   isOpen,
   selectedParkingLot,
-  bayTypes,
   onToggleMenu,
   onToggleCarpark,
   carparkStatus,

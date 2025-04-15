@@ -23,6 +23,31 @@ export default function MapViewComponent() {
   const viewRef = useRef<MapView | null>(null);
   const parkingLayerRef = useRef<FeatureLayer | null>(null);
   
+  const toggleCarparkStatus = (parkingLot: string) => {
+    // Get the current status (true = closed, false = open)
+    const currentStatus = carparkStatus[parkingLot] ?? false;
+    const newStatus = !currentStatus;
+    
+    // Update carpark status
+    setCarparkStatus(prev => ({
+      ...prev,
+      [parkingLot]: newStatus
+    }));
+
+    // Update closed bay counts
+    setClosedBayCounts(prev => {
+      const newCounts = { ...prev };
+      bayTypeCounts.forEach(({ type, count }) => {
+        if (newStatus) { // If closing the carpark
+          newCounts[type] = (newCounts[type] || 0) + count;
+        } else { // If opening the carpark
+          newCounts[type] = Math.max(0, (newCounts[type] || 0) - count);
+        }
+      });
+      return newCounts;
+    });
+  };
+
   useEffect(() => {
     if (!mapDivRef.current) return;
 
@@ -190,39 +215,8 @@ export default function MapViewComponent() {
       }
     };
 
-    // Log the renderer configuration for debugging
-    console.log('Renderer config:', {
-      uniqueValueInfos: renderer.uniqueValueInfos,
-      carparkStatus
-    });
-
     parkingLayerRef.current.renderer = renderer;
-  }, [carparkStatus]);
-
-  const toggleCarparkStatus = (parkingLot: string) => {
-    // Get the current status (true = closed, false = open)
-    const currentStatus = carparkStatus[parkingLot] ?? false;
-    const newStatus = !currentStatus;
-    
-    // Update carpark status
-    setCarparkStatus(prev => ({
-      ...prev,
-      [parkingLot]: newStatus
-    }));
-
-    // Update closed bay counts
-    setClosedBayCounts(prev => {
-      const newCounts = { ...prev };
-      bayTypeCounts.forEach(({ type, count }) => {
-        if (newStatus) { // If closing the carpark
-          newCounts[type] = (newCounts[type] || 0) + count;
-        } else { // If opening the carpark
-          newCounts[type] = Math.max(0, (newCounts[type] || 0) - count);
-        }
-      });
-      return newCounts;
-    });
-  };
+  }, [carparkStatus, toggleCarparkStatus]);
 
   const resetAllCarparks = () => {
     // Reset all carpark statuses to open (false)
@@ -238,7 +232,7 @@ export default function MapViewComponent() {
         selectedParkingLot={selectedParkingLot}
         bayTypes={bayTypeCounts}
         onToggleMenu={() => setIsMenuOpen(!isMenuOpen)}
-        onToggleCarpark={(isOpen) => toggleCarparkStatus(selectedParkingLot)}
+        onToggleCarpark={() => toggleCarparkStatus(selectedParkingLot)}
         carparkStatus={carparkStatus}
         closedBayCounts={closedBayCounts}
         setClosedBayCounts={setClosedBayCounts}
