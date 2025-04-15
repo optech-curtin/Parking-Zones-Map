@@ -381,12 +381,10 @@ export default function MapViewComponent() {
         onResetAll={resetAllCarparks}
       />
       <div ref={mapDivRef} className="w-full h-screen" />
-      {selectedParkingLot && (
-        <ParkingInfoTable 
-          parkingLot={selectedParkingLot}
-          bayTypes={bayTypeCounts}
-        />
-      )}
+      <ParkingInfoTable 
+        parkingLot={selectedParkingLot}
+        bayTypes={bayTypeCounts}
+      />
     </div>
   );
 }
