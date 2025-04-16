@@ -186,47 +186,29 @@ export default function MapViewComponent() {
   useEffect(() => {
     if (!mapDivRef.current) return;
 
-    const initializeMap = async () => {
-      try {
-        // Initialize the map view
-        const view = new MapView({
-          container: mapDivRef.current,
-          map: new WebMap({
-            portalItem: {
-              id: "f2e9b762544945f390ca4ac3671cfa72",
-            },
-          }),
-          center: [-122.4443, 47.2529],
-          zoom: 5,
-        });
+    esriConfig.portalUrl = "https://arcgis.curtin.edu.au/portal";
 
-        // Handle the initial load error gracefully
-        view.when(() => {
-          console.log("Map view loaded successfully");
-        }).catch((error) => {
-          if (error.name === "AbortError") {
-            // This is expected when not authenticated, no need to log as error
-            console.log("Map load aborted - authentication required");
-          } else {
-            console.error("Error loading map:", error);
-          }
-        });
+    const webmap = new WebMap({
+      portalItem: {
+        id: "34e3e14cea754a41a9b7f8455fef8c48"
+      }
+    });
+    
+    const view = new MapView({
+      container: mapDivRef.current,
+      map: webmap,
+      center: [115.894, -32.005],
+      zoom: 14,
+    });
 
-        // Store the view in the ref
-        viewRef.current = view;
+    viewRef.current = view;
 
-        // Cleanup function
-        return () => {
-          if (viewRef.current) {
-            viewRef.current.destroy();
-          }
-        };
-      } catch (error) {
-        console.error("Error initializing map:", error);
+    // Cleanup function
+    return () => {
+      if (view) {
+        view.destroy();
       }
     };
-
-    initializeMap();
   }, []);
 
   // Add click handlers (updates when toggleCarparkStatus changes)
