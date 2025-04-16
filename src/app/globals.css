@@ -57,3 +57,8 @@ calcite-dialog::part(overlay) {
   z-index: 999999 !important;
 }
 
+.scrim{
+  inset: 473px !important;
+}
+
+
