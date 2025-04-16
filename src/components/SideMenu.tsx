@@ -11,6 +11,7 @@ interface SideMenuProps {
   closedBayCounts: { [key: string]: number };
   totalBayCounts: { [key: string]: number };
   onResetAll: () => void;
+  isLoading: boolean;
 }
 
 export default function SideMenu({
@@ -22,6 +23,7 @@ export default function SideMenu({
   closedBayCounts,
   totalBayCounts,
   onResetAll,
+  isLoading,
 }: SideMenuProps) {
   const isCarparkOpen = !carparkStatus[selectedParkingLot];
   const [isZoneInfoMinimized, setIsZoneInfoMinimized] = React.useState(false);
@@ -31,7 +33,7 @@ export default function SideMenu({
       {/* Main Parking Planning Menu */}
       <div className="fixed left-0 top-0 h-full z-20">
         <div className="bg-white shadow-lg rounded-lg overflow-hidden mt-4 ml-4 w-64">
-          <div className="flex items-center justify-between p-2 bg-gray-100 h-12">
+          <div className="flex items-center justify-between p-2 bg-gray-100 h-12 rounded-t-lg">
             <div className="flex items-center">
               <button
                 onClick={() => setIsZoneInfoMinimized(!isZoneInfoMinimized)}
@@ -88,34 +90,40 @@ export default function SideMenu({
           } overflow-hidden`}>
             <div className="p-4">
               <h3 className="text-lg font-semibold mb-4">Bay Type Summary</h3>
-              <div className="space-y-2">
-                {Object.entries(totalBayCounts)
-                  .sort(([, a], [, b]) => b - a)
-                  .map(([type, totalCount]) => (
-                    <div key={type} className="flex justify-between">
-                      <span>{type}</span>
-                      <span className="font-medium">
-                        {totalCount} {closedBayCounts[type] > 0 && (
-                          <span className="text-red-500">({closedBayCounts[type]} closed)</span>
-                        )}
+              {isLoading ? (
+                <div className="flex justify-center items-center h-32">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {Object.entries(totalBayCounts)
+                    .sort(([, a], [, b]) => b - a)
+                    .map(([type, totalCount]) => (
+                      <div key={type} className="flex justify-between">
+                        <span>{type}</span>
+                        <span className="font-medium">
+                          {totalCount} {closedBayCounts[type] > 0 && (
+                            <span className="text-red-500">({closedBayCounts[type]} closed)</span>
+                          )}
+                        </span>
+                      </div>
+                    ))}
+                  <div className="border-t pt-2 mt-2 space-y-2">
+                    <div className="flex justify-between font-semibold">
+                      <span>Total Bays</span>
+                      <span>
+                        {Object.values(totalBayCounts).reduce((a, b) => a + b, 0)}
                       </span>
                     </div>
-                  ))}
-                <div className="border-t pt-2 mt-2 space-y-2">
-                  <div className="flex justify-between font-semibold">
-                    <span>Total Bays</span>
-                    <span >
-                      {Object.values(totalBayCounts).reduce((a, b) => a + b, 0)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between font-semibold">
-                    <span>Total Closed</span>
-                    <span className="text-red-500">
-                      {Object.values(closedBayCounts).reduce((a, b) => a + b, 0)}
-                    </span>
+                    <div className="flex justify-between font-semibold">
+                      <span>Total Closed</span>
+                      <span className="text-red-500">
+                        {Object.values(closedBayCounts).reduce((a, b) => a + b, 0)}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>

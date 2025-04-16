@@ -22,11 +22,13 @@ export default function MapViewComponent() {
   const [carparkStatus, setCarparkStatus] = useState<{ [key: string]: boolean }>({});
   const [closedBayCounts, setClosedBayCounts] = useState<{ [key: string]: number }>({});
   const [totalBayCounts, setTotalBayCounts] = useState<{ [key: string]: number }>({});
+  const [isLoading, setIsLoading] = useState(true);
   
   // Fetch all bay types when map loads
   useEffect(() => {
     const fetchAllBayTypes = async () => {
       try {
+        setIsLoading(true);
         // Create FeatureLayers for all services
         const parkingLotsLayer = new FeatureLayer({
           url: "https://arcgis.curtin.edu.au/arcgis/rest/services/ParKam/ParKam/FeatureServer/4"
@@ -89,6 +91,8 @@ export default function MapViewComponent() {
         setTotalBayCounts(totalCounts);
       } catch (error) {
         console.error('Error fetching all bay types:', error);
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -379,11 +383,13 @@ export default function MapViewComponent() {
         closedBayCounts={closedBayCounts}
         totalBayCounts={totalBayCounts}
         onResetAll={resetAllCarparks}
+        isLoading={isLoading}
       />
       <div ref={mapDivRef} className="w-full h-screen" />
       <ParkingInfoTable 
-        parkingLot={selectedParkingLot}
+        selectedParkingLot={selectedParkingLot}
         bayTypes={bayTypeCounts}
+        isLoading={isLoading}
       />
     </div>
   );
