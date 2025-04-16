@@ -17,6 +17,7 @@ export default function MapViewComponent() {
   const mapDivRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<MapView | null>(null);
   const [selectedParkingLot, setSelectedParkingLot] = useState<string>('');
+  const [highlightedParkingLot, setHighlightedParkingLot] = useState<string>('');
   const [bayTypeCounts, setBayTypeCounts] = useState<BayTypeCount[]>([]);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [carparkStatus, setCarparkStatus] = useState<{ [key: string]: boolean }>({});
@@ -199,7 +200,28 @@ export default function MapViewComponent() {
       map: webmap,
       center: [115.894, -32.005],
       zoom: 14,
+      popupEnabled: false 
     });
+
+    // Create and add the parking layer
+    const parkingLayer = new FeatureLayer({
+      url: "https://arcgis.curtin.edu.au/arcgis/rest/services/ParKam/ParKam/FeatureServer/4",
+      renderer: {
+        type: "unique-value" as const,
+        field: "Zone",
+        uniqueValueInfos: [],
+        defaultSymbol: {
+          type: "simple-fill" as const,
+          color: [255, 255, 255, 0],
+          outline: {
+            color: [0, 0, 0, 1],
+            width: 1
+          }
+        }
+      }
+    });
+    parkingLayer.id = "parkingLayer";
+    view.map.add(parkingLayer);
 
     viewRef.current = view;
 
@@ -210,6 +232,57 @@ export default function MapViewComponent() {
       }
     };
   }, []);
+
+  // Update renderer when carpark status or highlight changes
+  useEffect(() => {
+    if (!viewRef.current) return;
+
+    const view = viewRef.current;
+    const parkingLayer = view.map.layers.find(layer => layer.id === "parkingLayer") as FeatureLayer;
+    
+    if (!parkingLayer) return;
+
+    parkingLayer.renderer = {
+      type: "unique-value" as const,
+      field: "Zone",
+      uniqueValueInfos: [
+        // Highlighted parking lot
+        ...(highlightedParkingLot ? [{
+          value: highlightedParkingLot.trim(),
+          symbol: {
+            type: "simple-fill" as const,
+            color: [0, 255, 255, 0.3],
+            outline: {
+              color: [0, 255, 255, 1],
+              width: 3
+            }
+          }
+        }] : []),
+        // Closed parking lots
+        ...Object.entries(carparkStatus)
+          .filter(([, isClosed]) => isClosed)
+          .map(([zone]) => ({
+            value: zone.trim(),
+            symbol: {
+              type: "simple-fill" as const,
+              color: [255, 0, 0, 0.5],
+              outline: {
+                color: [255, 0, 0, 1],
+                width: 3
+              }
+            }
+          }))
+      ],
+      defaultSymbol: {
+        type: "simple-fill" as const,
+        color: [255, 255, 255, 0],
+        outline: {
+          color: [0, 0, 0, 1],
+          width: 1
+        }
+      }
+    };
+  }, [carparkStatus, highlightedParkingLot]);
 
   // Add click handlers (updates when toggleCarparkStatus changes)
   useEffect(() => {
@@ -256,6 +329,7 @@ export default function MapViewComponent() {
             const parkinglot = clickedFeature.attributes.Zone.trim();
             console.log('Clicked zone:', parkinglot);
             setSelectedParkingLot(parkinglot);
+            setHighlightedParkingLot(parkinglot);
 
             // Create FeatureLayers for both parking bay services
             const underBaysLayer = new FeatureLayer({
@@ -305,6 +379,11 @@ export default function MapViewComponent() {
               .sort((a, b) => b.count - a.count);
 
             setBayTypeCounts(sortedBayTypes);
+          } else {
+            // Clear highlight when clicking outside a parking lot
+            setHighlightedParkingLot('');
+            setSelectedParkingLot('');
+            setBayTypeCounts([]);
           }
         } catch (error) {
           console.error('Map click error:', error);
@@ -319,51 +398,6 @@ export default function MapViewComponent() {
       handle.remove();
     };
   }, [toggleCarparkStatus]);
-
-  // Update renderer when carpark status changes
-  useEffect(() => {
-    if (!viewRef.current) return;
-
-    const view = viewRef.current;
-    const parkingLayer = new FeatureLayer({
-      url: "https://arcgis.curtin.edu.au/arcgis/rest/services/ParKam/ParKam/FeatureServer/4",
-      renderer: {
-        type: "unique-value" as const,
-        field: "Zone",
-        uniqueValueInfos: Object.entries(carparkStatus).map(([zone, isClosed]) => ({
-          value: zone,
-          symbol: {
-            type: "simple-fill" as const,
-            color: isClosed ? [255, 0, 0, 0.5] : [255, 255, 255, 0],
-            outline: {
-              color: isClosed ? [255, 0, 0, 1] : [0, 0, 0, 1],
-              width: isClosed ? 2 : 1
-            }
-          }
-        })),
-        defaultSymbol: {
-          type: "simple-fill" as const,
-          color: [255, 255, 255, 0],
-          outline: {
-            color: [0, 0, 0, 1],
-            width: 1
-          }
-        }
-      }
-    });
-
-    // Remove existing parking layer if it exists
-    const existingLayer = view.map.layers.find(layer => 
-      layer.id === "parkingLayer"
-    );
-    if (existingLayer) {
-      view.map.remove(existingLayer);
-    }
-
-    // Add the new layer with updated renderer
-    parkingLayer.id = "parkingLayer";
-    view.map.add(parkingLayer);
-  }, [carparkStatus]);
 
   const resetAllCarparks = () => {
     // Reset all carpark statuses to open (false)
