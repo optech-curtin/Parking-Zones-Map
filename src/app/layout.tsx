@@ -10,8 +10,8 @@ const inter = Inter({
 
 
 export const metadata: Metadata = {
-  title: "Campus Planning - Parking",
-  description: "A Parking Lot Playground for Campus Planning",
+  title: "Parking Zones Map",
+  description: "A Interactive Map of Parking Lot Zones",
 };
 
 export default function RootLayout({
