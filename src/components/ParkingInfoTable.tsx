@@ -38,7 +38,7 @@ export default function ParkingInfoTable({
                 />
               </svg>
             </button>
-            <h2 className="text-sm font-medium ml-2">Parking Information</h2>
+            <h2 className="text-sm font-medium ml-2">Parking Lot Information</h2>
           </div>
         </div>
         <div className={`transition-all duration-300 ease-in-out ${
