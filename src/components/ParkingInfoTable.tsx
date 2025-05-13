@@ -14,7 +14,7 @@ export default function ParkingInfoTable({
   const [isMinimized, setIsMinimized] = React.useState(false);
 
   return (
-    <div className="fixed right-0 top-0 h-full z-20">
+    <div className="fixed right-0 top-0 z-20">
       <div className="bg-white shadow-lg rounded-lg overflow-hidden mt-4 mr-4 w-64">
         <div className="flex items-center justify-between p-2 bg-gray-100 h-12 rounded-t-lg">
           <div className="flex items-center">
