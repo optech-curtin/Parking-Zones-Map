@@ -71,7 +71,7 @@ export default function MapViewComponent() {
         parkingLotsQuery.returnGeometry = false;
         parkingLotsQuery.outFields = ['Zone'];
         const parkingLotsResult = await parkingLotsLayer.queryFeatures(parkingLotsQuery);
-        const parkingLots = parkingLotsResult.features.map((f: __esri.Graphic) => f.attributes.Zone.trim());
+        const parkingLots = [...new Set(parkingLotsResult.features.map((f: __esri.Graphic) => f.attributes.Zone.trim()))];
 
         // Calculate total bay type counts
         const totalCounts: { [key: string]: number } = {};
@@ -99,6 +99,8 @@ export default function MapViewComponent() {
           'Unknown': '#9E9E9E'
         };
 
+        let acrodRunningTotal = 0;
+
         // Query each parking lot's bays
         for (const parkingLot of parkingLots) {
           const underBaysQuery = underBaysLayer.createQuery();
@@ -117,8 +119,33 @@ export default function MapViewComponent() {
             baysLayer.queryFeatures(baysQuery)
           ]);
 
+          // Clean bay types in the results
+          underBaysResult.features.forEach(feature => {
+            if (feature.attributes.baytype) {
+              feature.attributes.baytype = feature.attributes.baytype
+                .replace(/['"]/g, '') // Remove quotes
+                .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove zero-width spaces and other invisible characters
+                .trim();
+            }
+          });
+          baysResult.features.forEach(feature => {
+            if (feature.attributes.baytype) {
+              feature.attributes.baytype = feature.attributes.baytype
+                .replace(/['"]/g, '') // Remove quotes
+                .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove zero-width spaces and other invisible characters
+                .trim();
+            }
+          });
+
           // Combine all features
           const allFeatures = [...underBaysResult.features, ...baysResult.features];
+
+          // Count ACROD bays for this parking lot
+          const acrodCount = allFeatures.filter(f => f.attributes.baytype === 'ACROD').length;
+          if (acrodCount > 0) {
+            acrodRunningTotal += acrodCount;
+            console.log(`Parking lot ${parkingLot} has ${acrodCount} ACROD bays (Total: ${acrodRunningTotal})`);
+          }
 
           // Accumulate counts
           allFeatures.forEach(feature => {
@@ -127,6 +154,7 @@ export default function MapViewComponent() {
           });
         }
 
+        console.log('Bay type counts:', totalCounts);
         setTotalBayCounts(totalCounts);
         setBayColors(bayColors);
       } catch (error) {
