@@ -13,19 +13,6 @@ interface BayTypeCount {
   count: number;
 }
 
-// Default colors for different bay types
-const getDefaultColor = (bayType: string): string => {
-  const colorMap: { [key: string]: string } = {
-    'Green': '#4CAF50',
-    'Yellow': '#FFC107',
-    'Blue': '#2196F3',
-    'White': '#FFFFFF',
-    'ACROD': '#9C27B0',
-    'Unknown': '#9E9E9E'
-  };
-  return colorMap[bayType] || '#9E9E9E';
-};
-
 export default function MapViewComponent() {
   const mapDivRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<MapView | null>(null);
