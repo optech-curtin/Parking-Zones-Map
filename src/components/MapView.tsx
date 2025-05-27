@@ -13,6 +13,19 @@ interface BayTypeCount {
   count: number;
 }
 
+// Default colors for different bay types
+const getDefaultColor = (bayType: string): string => {
+  const colorMap: { [key: string]: string } = {
+    'Green': '#4CAF50',
+    'Yellow': '#FFC107',
+    'Blue': '#2196F3',
+    'White': '#FFFFFF',
+    'ACROD': '#9C27B0',
+    'Unknown': '#9E9E9E'
+  };
+  return colorMap[bayType] || '#9E9E9E';
+};
+
 export default function MapViewComponent() {
   const mapDivRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<MapView | null>(null);
@@ -24,6 +37,7 @@ export default function MapViewComponent() {
   const [closedBayCounts, setClosedBayCounts] = useState<{ [key: string]: number }>({});
   const [totalBayCounts, setTotalBayCounts] = useState<{ [key: string]: number }>({});
   const [isLoading, setIsLoading] = useState(true);
+  const [bayColors, setBayColors] = useState<{ [key: string]: string }>({});
   
   // Fetch all bay types when map loads
   useEffect(() => {
@@ -36,11 +50,13 @@ export default function MapViewComponent() {
         });
 
         const underBaysLayer = new FeatureLayer({
-          url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays_Under/FeatureServer/0"
+          url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays_Under/FeatureServer/0",
+          outFields: ['*', 'baytype']
         });
 
         const baysLayer = new FeatureLayer({
-          url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays/FeatureServer/0"
+          url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays/FeatureServer/0",
+          outFields: ['*', 'baytype']
         });
 
         // Wait for all layers to load
@@ -59,18 +75,41 @@ export default function MapViewComponent() {
 
         // Calculate total bay type counts
         const totalCounts: { [key: string]: number } = {};
+        const bayColors: { [key: string]: string } = {
+          // Add your color mappings here
+          'Green': '#4ce600',
+          'Yellow': '#ffff00',
+          'Reserved': '#c500ff',
+          '5Minute': '#ffd37f',
+          '15Minute': '#ffaa00',
+          '30Minute': '#ffd37f',
+          '90Minute': '#e69800',
+          'Blue': '#0070ff',
+          'White': '#d6d6d6',
+          'ACROD': '#005ce6',
+          'Courtesy': '#73ffdf',
+          'Motorcycle': '#1a1a1a',
+          'EV': '#4ce600',
+          'Visitor': '#149ece',
+          'CarShare': '#a7c636',
+          'Police': '#ff0000',
+          'Loading': '#242424',
+          'Faculty': '#a87000',
+          'Maintenance': '#a87000',
+          'Unknown': '#9E9E9E'
+        };
 
         // Query each parking lot's bays
         for (const parkingLot of parkingLots) {
           const underBaysQuery = underBaysLayer.createQuery();
           underBaysQuery.where = `parkinglot = '${parkingLot}'`;
           underBaysQuery.returnGeometry = false;
-          underBaysQuery.outFields = ['*'];
+          underBaysQuery.outFields = ['*', 'baytype'];
           
           const baysQuery = baysLayer.createQuery();
           baysQuery.where = `parkinglot = '${parkingLot}'`;
           baysQuery.returnGeometry = false;
-          baysQuery.outFields = ['*'];
+          baysQuery.outFields = ['*', 'baytype'];
 
           // Execute queries
           const [underBaysResult, baysResult] = await Promise.all([
@@ -88,8 +127,8 @@ export default function MapViewComponent() {
           });
         }
 
-        console.log('Total bay counts:', totalCounts); // Debug log
         setTotalBayCounts(totalCounts);
+        setBayColors(bayColors);
       } catch (error) {
         console.error('Error fetching all bay types:', error);
       } finally {
@@ -218,7 +257,8 @@ export default function MapViewComponent() {
             width: 1
           }
         }
-      }
+      },
+      outFields: ['Zone', 'status']
     });
     parkingLayer.id = "parkingLayer";
     view.map.add(parkingLayer);
@@ -242,27 +282,33 @@ export default function MapViewComponent() {
     
     if (!parkingLayer) return;
 
-    parkingLayer.renderer = {
-      type: "unique-value" as const,
-      field: "Zone",
-      uniqueValueInfos: [
-        // Highlighted parking lot
-        ...(highlightedParkingLot ? [{
-          value: highlightedParkingLot.trim(),
-          symbol: {
-            type: "simple-fill" as const,
-            color: [0, 255, 255, 0.3],
-            outline: {
-              color: [0, 255, 255, 1],
-              width: 3
+    // Query for features with Closed status
+    const query = parkingLayer.createQuery();
+    query.where = "status = 'Closed'";
+    query.outFields = ['Zone'];
+    
+    parkingLayer.queryFeatures(query).then((result: __esri.FeatureSet) => {
+      const closedZones = result.features.map((f: __esri.Graphic) => f.attributes.Zone.trim());
+      
+      parkingLayer.renderer = {
+        type: "unique-value" as const,
+        field: "Zone",
+        uniqueValueInfos: [
+          // Highlighted parking lot
+          ...(highlightedParkingLot ? [{
+            value: highlightedParkingLot.trim(),
+            symbol: {
+              type: "simple-fill" as const,
+              color: [0, 255, 255, 0.3],
+              outline: {
+                color: [0, 255, 255, 1],
+                width: 3
+              }
             }
-          }
-        }] : []),
-        // Closed parking lots
-        ...Object.entries(carparkStatus)
-          .filter(([, isClosed]) => isClosed)
-          .map(([zone]) => ({
-            value: zone.trim(),
+          }] : []),
+          // Closed parking lots from status
+          ...closedZones.map((zone: string) => ({
+            value: zone,
             symbol: {
               type: "simple-fill" as const,
               color: [255, 0, 0, 0.5],
@@ -271,17 +317,32 @@ export default function MapViewComponent() {
                 width: 3
               }
             }
-          }))
-      ],
-      defaultSymbol: {
-        type: "simple-fill" as const,
-        color: [255, 255, 255, 0],
-        outline: {
-          color: [0, 0, 0, 1],
-          width: 1
+          })),
+          // Manually closed parking lots
+          ...Object.entries(carparkStatus)
+            .filter(([, isClosed]) => isClosed)
+            .map(([zone]) => ({
+              value: zone.trim(),
+              symbol: {
+                type: "simple-fill" as const,
+                color: [255, 0, 0, 0.5],
+                outline: {
+                  color: [255, 0, 0, 1],
+                  width: 3
+                }
+              }
+            }))
+        ],
+        defaultSymbol: {
+          type: "simple-fill" as const,
+          color: [255, 255, 255, 0],
+          outline: {
+            color: [0, 0, 0, 1],
+            width: 1
+          }
         }
-      }
-    };
+      };
+    });
   }, [carparkStatus, highlightedParkingLot]);
 
   // Add click handlers (updates when toggleCarparkStatus changes)
@@ -416,6 +477,7 @@ export default function MapViewComponent() {
         carparkStatus={carparkStatus}
         closedBayCounts={closedBayCounts}
         totalBayCounts={totalBayCounts}
+        bayColors={bayColors}
         onResetAll={resetAllCarparks}
         isLoading={isLoading}
       />
@@ -428,3 +490,4 @@ export default function MapViewComponent() {
     </div>
   );
 }
+

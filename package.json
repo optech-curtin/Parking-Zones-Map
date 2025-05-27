@@ -12,6 +12,7 @@
   "dependencies": {
     "@arcgis/core": "^4.32.9",
     "next": "^15.3.0",
+    "node-cache": "^5.1.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

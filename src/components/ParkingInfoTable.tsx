@@ -43,8 +43,8 @@ export default function ParkingInfoTable({
         </div>
         <div className={`transition-all duration-300 ease-in-out ${
           isMinimized ? 'max-h-0' : 'max-h-[80vh]'
-        } overflow-hidden`}>
-          <div className="p-4">
+        }`}>
+          <div className="p-4 overflow-y-auto max-h-[calc(80vh-3rem)]">
             {selectedParkingLot ? (
               <>
                 <h3 className="text-lg font-semibold mb-4">{selectedParkingLot}</h3>

@@ -10,6 +10,7 @@ interface SideMenuProps {
   carparkStatus: { [key: string]: boolean };
   closedBayCounts: { [key: string]: number };
   totalBayCounts: { [key: string]: number };
+  bayColors: { [key: string]: string };
   onResetAll: () => void;
   isLoading: boolean;
 }
@@ -22,6 +23,7 @@ export default function SideMenu({
   carparkStatus,
   closedBayCounts,
   totalBayCounts,
+  bayColors,
   onResetAll,
   isLoading,
 }: SideMenuProps) {
@@ -53,8 +55,8 @@ export default function SideMenu({
     <>
       {/* Main Parking Planning Menu */}
       <div className="fixed left-[50px] top-0 h-full z-30">
-        <div className="bg-white shadow-lg rounded-lg overflow-hidden mt-4 ml-4 w-64">
-          <div className="flex items-center justify-between p-2 bg-gray-100 h-12 rounded-t-lg">
+        <div className="bg-white shadow-lg rounded-lg overflow-hidden mt-4 ml-4 w-64 min-h-0 max-h-[calc(100vh-2rem)] flex flex-col">
+          <div className="flex items-center justify-between p-2 bg-gray-100 h-12 rounded-t-lg flex-shrink-0">
             <div className="flex items-center">
               <button
                 onClick={() => setIsZoneInfoMinimized(!isZoneInfoMinimized)}
@@ -127,19 +129,25 @@ export default function SideMenu({
             </div>
           </div>
           <div className={`transition-all duration-300 ease-in-out ${
-            isZoneInfoMinimized ? 'max-h-0' : 'max-h-[80vh]'
+            isZoneInfoMinimized ? 'max-h-0' : 'max-h-[calc(100vh-6rem)]'
           } overflow-hidden`}>
-            <div className="p-4">
-              <h3 className="text-lg font-semibold mb-4">Bay Type Summary</h3>
+            <div className="p-4 flex flex-col">
+              <h3 className="text-lg font-semibold mb-4 flex-shrink-0">Bay Type Summary</h3>
               {isLoading ? (
-                <div className="flex justify-center items-center h-32">
+                <div className="flex justify-center items-center h-32 flex-shrink-0">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
                 </div>
               ) : (
-                <div className="space-y-2 max-h-[calc(80vh-8rem)] overflow-y-auto pr-2">
+                <div className="space-y-2 overflow-y-auto max-h-[calc(100vh-12rem)] pr-2">
                   {filteredBayTypes.map(([type, totalCount]) => (
-                    <div key={type} className="flex justify-between">
-                      <span>{type}</span>
+                    <div key={type} className="flex justify-between items-center">
+                      <div className="flex items-center space-x-2">
+                        <div 
+                          className="w-4 h-4 rounded-full border border-gray-300"
+                          style={{ backgroundColor: bayColors[type] || '#9E9E9E' }}
+                        />
+                        <span>{type}</span>
+                      </div>
                       <span className="font-medium">
                         {totalCount} {closedBayCounts[type] > 0 && (
                           <span className="text-red-500">({closedBayCounts[type]} closed)</span>
@@ -172,12 +180,12 @@ export default function SideMenu({
       <div className={`fixed left-[50px] top-0 h-full z-20 transition-all duration-300 ease-in-out ${
         isFilterOpen ? 'translate-x-[calc(16rem+1rem)]' : 'translate-x-0'
       }`}>
-        <div className="bg-white shadow-lg rounded-lg overflow-hidden mt-4 ml-4 w-64">
-          <div className="flex items-center p-2 bg-gray-100 h-12">
+        <div className="bg-white shadow-lg rounded-lg overflow-hidden mt-4 ml-4 w-64 min-h-0 max-h-[calc(100vh-2rem)] flex flex-col">
+          <div className="flex items-center p-2 bg-gray-100 h-12 flex-shrink-0">
             <h2 className="text-sm font-medium">Filter Options</h2>
           </div>
           <div className={`transition-all duration-300 ease-in-out ${
-            isFilterOpen && !isZoneInfoMinimized ? 'max-h-[80vh]' : 'max-h-0'
+            isFilterOpen && !isZoneInfoMinimized ? 'max-h-[calc(100vh-6rem)]' : 'max-h-0'
           } overflow-hidden`}>
             <div className="p-4">
               <div className="space-y-4">
@@ -200,12 +208,12 @@ export default function SideMenu({
       <div className={`fixed left-[50px] top-0 h-full z-10 transition-all duration-300 ease-in-out ${
         isOpen ? (isFilterOpen ? 'translate-x-[calc(32rem+2rem)]' : 'translate-x-[calc(16rem+1rem)]') : 'translate-x-0'
       }`}>
-        <div className="bg-white shadow-lg rounded-lg overflow-hidden mt-4 ml-4 w-64">
-          <div className="flex items-center p-2 bg-gray-100 h-12">
+        <div className="bg-white shadow-lg rounded-lg overflow-hidden mt-4 ml-4 w-64 min-h-0 max-h-[calc(100vh-2rem)] flex flex-col">
+          <div className="flex items-center p-2 bg-gray-100 h-12 flex-shrink-0">
             <h2 className="text-sm font-medium">Parking Lot Controls</h2>
           </div>
           <div className={`transition-all duration-300 ease-in-out ${
-            isOpen && !isZoneInfoMinimized ? 'max-h-[80vh]' : 'max-h-0'
+            isOpen && !isZoneInfoMinimized ? 'max-h-[calc(100vh-6rem)]' : 'max-h-0'
           } overflow-hidden`}>
             <div className="p-4">
               {selectedParkingLot ? (
