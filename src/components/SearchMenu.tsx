@@ -22,9 +22,21 @@ export default function SearchMenu({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const filteredParkingLots = parkingLots.filter(lot =>
-    lot.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredParkingLots = parkingLots
+    .filter(lot => lot.toLowerCase().includes(searchQuery.toLowerCase()))
+    .sort((a, b) => {
+      // Extract numbers from the parking lot names
+      const numA = parseInt(a.match(/\d+/)?.[0] || '0');
+      const numB = parseInt(b.match(/\d+/)?.[0] || '0');
+      
+      // If both have numbers, sort by numbers
+      if (!isNaN(numA) && !isNaN(numB)) {
+        return numA - numB;
+      }
+      
+      // If no numbers or only one has numbers, fall back to string comparison
+      return a.localeCompare(b);
+    });
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!searchQuery) return;
