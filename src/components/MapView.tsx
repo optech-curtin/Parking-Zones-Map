@@ -89,7 +89,7 @@ export default function MapViewComponent() {
           'Taxi': '#ff0000',
           'Faculty': '#fce4d6',
           'Maintenance': '#bf8f00',
-          'DropOff': '833c0b',
+          'DropOff': '#833c0b',
           'Unknown': '#9E9E9E'
         };
 
