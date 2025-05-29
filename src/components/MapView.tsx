@@ -7,6 +7,7 @@ import FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import esriConfig from "@arcgis/core/config";
 import ParkingInfoTable from './ParkingInfoTable';
 import SideMenu from './SideMenu';
+import SearchMenu from './SearchMenu';
 
 interface BayTypeCount {
   type: string;
@@ -25,6 +26,9 @@ export default function MapViewComponent() {
   const [totalBayCounts, setTotalBayCounts] = useState<{ [key: string]: number }>({});
   const [isLoading, setIsLoading] = useState(true);
   const [bayColors, setBayColors] = useState<{ [key: string]: string }>({});
+  const [parkingLots, setParkingLots] = useState<string[]>([]);
+  const [isZoneInfoMinimized, setIsZoneInfoMinimized] = useState(false);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
   
   // Fetch all bay types when map loads
   useEffect(() => {
@@ -58,7 +62,8 @@ export default function MapViewComponent() {
         parkingLotsQuery.returnGeometry = false;
         parkingLotsQuery.outFields = ['Zone'];
         const parkingLotsResult = await parkingLotsLayer.queryFeatures(parkingLotsQuery);
-        const parkingLots = [...new Set(parkingLotsResult.features.map((f: __esri.Graphic) => f.attributes.Zone.trim()))];
+        const uniqueParkingLots = [...new Set(parkingLotsResult.features.map((f: __esri.Graphic) => f.attributes.Zone.trim()))];
+        setParkingLots(uniqueParkingLots);
 
         // Calculate total bay type counts
         const totalCounts: { [key: string]: number } = {};
@@ -89,7 +94,7 @@ export default function MapViewComponent() {
         };
 
         // Query each parking lot's bays
-        for (const parkingLot of parkingLots) {
+        for (const parkingLot of uniqueParkingLots) {
           const underBaysQuery = underBaysLayer.createQuery();
           underBaysQuery.where = `parkinglot = '${parkingLot}'`;
           underBaysQuery.returnGeometry = false;
@@ -475,8 +480,50 @@ export default function MapViewComponent() {
     setClosedBayCounts({});
   };
 
+  const handleSelectParkingLot = useCallback(async (parkingLot: string) => {
+    setSelectedParkingLot(parkingLot);
+    setHighlightedParkingLot(parkingLot);
+
+    // Query the parking lot geometry and zoom to it
+    try {
+      const parkingLayer = new FeatureLayer({
+        url: "https://arcgis.curtin.edu.au/arcgis/rest/services/ParKam/ParKam/FeatureServer/4"
+      });
+
+      const query = parkingLayer.createQuery();
+      query.where = `Zone = '${parkingLot}'`;
+      query.returnGeometry = true;
+      
+      const result = await parkingLayer.queryFeatures(query);
+      
+      if (result.features.length > 0 && viewRef.current) {
+        const geometry = result.features[0].geometry;
+        if (geometry) {
+          viewRef.current.goTo({
+            target: geometry,
+            padding: {
+              top: 150,
+              bottom: 150,
+              left: 150,
+              right: 150
+            }
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error zooming to parking lot:', error);
+    }
+  }, []);
+
   return (
     <div className="relative w-full h-screen">
+      <SearchMenu
+        parkingLots={parkingLots}
+        onSelectParkingLot={handleSelectParkingLot}
+        isZoneInfoMinimized={isZoneInfoMinimized}
+        isFilterOpen={isFilterOpen}
+        isMenuOpen={isMenuOpen}
+      />
       <SideMenu
         isOpen={isMenuOpen}
         selectedParkingLot={selectedParkingLot}
@@ -488,6 +535,10 @@ export default function MapViewComponent() {
         bayColors={bayColors}
         onResetAll={resetAllCarparks}
         isLoading={isLoading}
+        isZoneInfoMinimized={isZoneInfoMinimized}
+        setIsZoneInfoMinimized={setIsZoneInfoMinimized}
+        isFilterOpen={isFilterOpen}
+        setIsFilterOpen={setIsFilterOpen}
       />
       <div ref={mapDivRef} className="w-full h-screen" />
       <ParkingInfoTable 

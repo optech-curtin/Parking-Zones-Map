@@ -13,6 +13,10 @@ interface SideMenuProps {
   bayColors: { [key: string]: string };
   onResetAll: () => void;
   isLoading: boolean;
+  isZoneInfoMinimized: boolean;
+  setIsZoneInfoMinimized: (minimized: boolean) => void;
+  isFilterOpen: boolean;
+  setIsFilterOpen: (open: boolean) => void;
 }
 
 export default function SideMenu({
@@ -26,10 +30,12 @@ export default function SideMenu({
   bayColors,
   onResetAll,
   isLoading,
+  isZoneInfoMinimized,
+  setIsZoneInfoMinimized,
+  isFilterOpen,
+  setIsFilterOpen,
 }: SideMenuProps) {
   const isCarparkOpen = !carparkStatus[selectedParkingLot];
-  const [isZoneInfoMinimized, setIsZoneInfoMinimized] = React.useState(false);
-  const [isFilterOpen, setIsFilterOpen] = React.useState(false);
   const [filters, setFilters] = React.useState({
     paygZones: false,
   });
@@ -146,7 +152,7 @@ export default function SideMenu({
                           className="w-4 h-4 rounded-full border border-gray-300"
                           style={{ backgroundColor: bayColors[type] || '#9E9E9E' }}
                         />
-                        <span>{type}</span>
+                      <span>{type}</span>
                       </div>
                       <span className="font-medium">
                         {totalCount} {closedBayCounts[type] > 0 && (

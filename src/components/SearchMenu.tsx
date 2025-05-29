@@ -1,0 +1,200 @@
+'use client';
+
+import React, { useState, useRef, useEffect } from 'react';
+
+interface SearchMenuProps {
+  onSelectParkingLot: (parkingLot: string) => void;
+  parkingLots: string[];
+  isZoneInfoMinimized: boolean;
+  isFilterOpen: boolean;
+  isMenuOpen: boolean;
+}
+
+export default function SearchMenu({ 
+  onSelectParkingLot, 
+  parkingLots,
+  isZoneInfoMinimized,
+  isFilterOpen,
+  isMenuOpen,
+}: SearchMenuProps) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const filteredParkingLots = parkingLots.filter(lot =>
+    lot.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!searchQuery) return;
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setHighlightedIndex(prev => 
+          prev < filteredParkingLots.length - 1 ? prev + 1 : prev
+        );
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setHighlightedIndex(prev => prev > 0 ? prev - 1 : prev);
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (highlightedIndex >= 0 && highlightedIndex < filteredParkingLots.length) {
+          const selectedLot = filteredParkingLots[highlightedIndex];
+          onSelectParkingLot(selectedLot);
+          setIsFocused(false);
+          setHighlightedIndex(-1);
+        }
+        break;
+      case 'Escape':
+        e.preventDefault();
+        setIsFocused(false);
+        setHighlightedIndex(-1);
+        break;
+    }
+  };
+
+  const handleClear = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSearchQuery('');
+    setHighlightedIndex(-1);
+    searchInputRef.current?.focus();
+  };
+
+  // Reset highlighted index when search query changes
+  useEffect(() => {
+    setHighlightedIndex(-1);
+  }, [searchQuery]);
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    if (highlightedIndex >= 0 && listRef.current) {
+      const highlightedElement = listRef.current.children[highlightedIndex] as HTMLElement;
+      if (highlightedElement) {
+        highlightedElement.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [highlightedIndex]);
+
+  // Calculate the left position based on menu states
+  const getLeftPosition = () => {
+    // When both parking lot controls and filter are open, move furthest right
+    if (isMenuOpen && isFilterOpen) {
+      return 'translate-x-[calc(48rem+3rem)]';
+    }
+    
+    // When only parking lot controls are open
+    if (isMenuOpen) {
+      return 'translate-x-[calc(32rem+2rem)]';
+    }
+    
+    // When only filter is open
+    if (isFilterOpen) {
+      return 'translate-x-[calc(32rem+2rem)]';
+    }
+    
+    // Default position (next to zone info)
+    return 'translate-x-[calc(16rem+1rem)]';
+  };
+
+  // Handle click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchInputRef.current && !searchInputRef.current.contains(event.target as Node)) {
+        setIsFocused(false);
+        setHighlightedIndex(-1);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div className={`fixed left-[50px] top-0 h-full z-25 transition-all duration-300 ease-in-out ${getLeftPosition()}`}>
+      <div className="bg-white shadow-lg rounded-lg overflow-hidden mt-4 ml-4 w-64 min-h-0 max-h-[calc(100vh-2rem)] flex flex-col">
+        <div className="flex items-center p-2 bg-gray-100 h-12 rounded-t-lg flex-shrink-0">
+          <div className="relative flex-1">
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Search parking lots..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => setIsFocused(true)}
+              onKeyDown={handleKeyDown}
+              className="w-full p-1 pl-8 pr-8 bg-transparent border-none focus:outline-none text-sm"
+            />
+            <svg
+              className="w-4 h-4 absolute left-0 top-1/2 -translate-y-1/2 text-gray-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+            {searchQuery && (
+              <button
+                onClick={handleClear}
+                className="absolute right-0 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-gray-200 transition-colors"
+              >
+                <svg
+                  className="w-4 h-4 text-gray-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+        {searchQuery && (
+          <div className="overflow-y-auto max-h-[calc(100vh-6rem)]">
+            <div className="p-2">
+              <div className="space-y-1" ref={listRef}>
+                {filteredParkingLots.map((lot, index) => (
+                  <button
+                    key={lot}
+                    onClick={() => {
+                      onSelectParkingLot(lot);
+                      setIsFocused(false);
+                      setHighlightedIndex(-1);
+                    }}
+                    className={`w-full text-left px-3 py-2 rounded transition-colors text-sm ${
+                      index === highlightedIndex 
+                        ? 'bg-blue-100 hover:bg-blue-200' 
+                        : 'hover:bg-gray-100'
+                    }`}
+                  >
+                    {lot}
+                  </button>
+                ))}
+                {filteredParkingLots.length === 0 && (
+                  <div className="text-center text-gray-500 py-4 text-sm">
+                    No parking lots found
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+} 
