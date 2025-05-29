@@ -13,12 +13,11 @@ interface SearchMenuProps {
 export default function SearchMenu({ 
   onSelectParkingLot, 
   parkingLots,
-  isZoneInfoMinimized,
   isFilterOpen,
   isMenuOpen,
 }: SearchMenuProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [isFocused, setIsFocused] = useState(false);
+  const [, setIsFocused] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
