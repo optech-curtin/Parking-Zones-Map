@@ -4,14 +4,23 @@ interface ParkingInfoTableProps {
   selectedParkingLot: string;
   bayTypes: { type: string; count: number }[];
   isLoading: boolean;
+  bayColors: { [key: string]: string };
 }
 
 export default function ParkingInfoTable({
   selectedParkingLot,
   bayTypes,
   isLoading,
+  bayColors,
 }: ParkingInfoTableProps) {
   const [isMinimized, setIsMinimized] = React.useState(false);
+
+  const cleanBayType = (type: string) => {
+    return type
+      .replace(/['"]/g, '') // Remove quotes
+      .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove zero-width spaces and other invisible characters
+      .trim();
+  };
 
   return (
     <div className="fixed right-0 top-0 z-20">
@@ -54,12 +63,21 @@ export default function ParkingInfoTable({
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {bayTypes.map(({ type, count }) => (
-                      <div key={type} className="flex justify-between">
-                        <span>{type}</span>
-                        <span className="font-medium">{count}</span>
-                      </div>
-                    ))}
+                    {bayTypes.map(({ type, count }) => {
+                      const cleanedType = cleanBayType(type);
+                      return (
+                        <div key={type} className="flex justify-between items-center">
+                          <div className="flex items-center space-x-2">
+                            <div 
+                              className="w-4 h-4 rounded-full border border-gray-300"
+                              style={{ backgroundColor: bayColors[cleanedType] || '#9E9E9E' }}
+                            />
+                            <span>{cleanedType}</span>
+                          </div>
+                          <span className="font-medium">{count}</span>
+                        </div>
+                      );
+                    })}
                     <div className="border-t pt-2 mt-2">
                       <div className="flex justify-between font-semibold">
                         <span>Total Bays</span>

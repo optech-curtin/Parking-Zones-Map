@@ -494,6 +494,7 @@ export default function MapViewComponent() {
         selectedParkingLot={selectedParkingLot}
         bayTypes={bayTypeCounts}
         isLoading={isLoading}
+        bayColors={bayColors}
       />
     </div>
   );
