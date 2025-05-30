@@ -60,7 +60,7 @@ export default function SideMenu({
   return (
     <>
       {/* Main Parking Planning Menu */}
-      <div className="fixed left-[50px] top-0 h-full z-30">
+      <div className="fixed left-[50px] top-0 z-30">
         <div className="bg-white shadow-lg rounded-lg overflow-hidden mt-4 ml-4 w-64 min-h-0 max-h-[calc(100vh-2rem)] flex flex-col">
           <div className="flex items-center justify-between p-2 bg-gray-100 h-12 rounded-t-lg flex-shrink-0">
             <div className="flex items-center">
@@ -183,7 +183,7 @@ export default function SideMenu({
       </div>
 
       {/* Filter Menu */}
-      <div className={`fixed left-[50px] top-0 h-full z-20 transition-all duration-300 ease-in-out ${
+      <div className={`fixed left-[50px] top-0 z-20 transition-all duration-300 ease-in-out ${
         isFilterOpen ? 'translate-x-[calc(16rem+1rem)]' : 'translate-x-0'
       }`}>
         <div className="bg-white shadow-lg rounded-lg overflow-hidden mt-4 ml-4 w-64 min-h-0 max-h-[calc(100vh-2rem)] flex flex-col">
@@ -211,9 +211,9 @@ export default function SideMenu({
       </div>
 
       {/* Parking Lot Controls Menu */}
-      <div className={`fixed left-[50px] top-0 h-full z-10 transition-all duration-300 ease-in-out ${
+      <div className={`fixed left-[50px] top-0 transition-all duration-300 ease-in-out ${
         isOpen ? (isFilterOpen ? 'translate-x-[calc(32rem+2rem)]' : 'translate-x-[calc(16rem+1rem)]') : 'translate-x-0'
-      }`}>
+      } ${isOpen ? 'z-30' : 'z-0 pointer-events-none'}`}>
         <div className="bg-white shadow-lg rounded-lg overflow-hidden mt-4 ml-4 w-64 min-h-0 max-h-[calc(100vh-2rem)] flex flex-col">
           <div className="flex items-center p-2 bg-gray-100 h-12 flex-shrink-0">
             <h2 className="text-sm font-medium">Parking Lot Controls</h2>

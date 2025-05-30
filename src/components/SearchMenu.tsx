@@ -126,7 +126,7 @@ export default function SearchMenu({
   }, []);
 
   return (
-    <div className={`fixed left-[50px] top-0 h-full z-25 transition-all duration-300 ease-in-out ${getLeftPosition()}`}>
+    <div className={`fixed left-[50px] top-0 z-25 transition-all duration-300 ease-in-out ${getLeftPosition()}`}>
       <div className="bg-white shadow-lg rounded-lg overflow-hidden mt-4 ml-4 w-64 min-h-0 max-h-[calc(100vh-2rem)] flex flex-col">
         <div className="flex items-center p-2 bg-gray-100 h-12 rounded-t-lg flex-shrink-0">
           <div className="relative flex-1">
