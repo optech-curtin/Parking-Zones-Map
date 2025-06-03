@@ -17,6 +17,9 @@ interface SideMenuProps {
   setIsZoneInfoMinimized: (minimized: boolean) => void;
   isFilterOpen: boolean;
   setIsFilterOpen: (open: boolean) => void;
+  monitoredCarparks: string[];
+  filters: { monitoredCarparks: boolean; paygZones: boolean };
+  setFilters: React.Dispatch<React.SetStateAction<{ monitoredCarparks: boolean; paygZones: boolean }>>;
 }
 
 export default function SideMenu({
@@ -34,13 +37,13 @@ export default function SideMenu({
   setIsZoneInfoMinimized,
   isFilterOpen,
   setIsFilterOpen,
+  monitoredCarparks,
+  filters,
+  setFilters,
 }: SideMenuProps) {
   const isCarparkOpen = !carparkStatus[selectedParkingLot];
-  const [filters, setFilters] = React.useState({
-    paygZones: false,
-  });
 
-  const handleFilterChange = (filterType: 'paygZones') => {
+  const handleFilterChange = (filterType: 'monitoredCarparks' | 'paygZones') => {
     setFilters(prev => ({
       ...prev,
       [filterType]: !prev[filterType]
@@ -48,14 +51,14 @@ export default function SideMenu({
   };
 
   const filteredBayTypes = React.useMemo(() => {
+    let filtered = Object.entries(totalBayCounts);
+
     if (filters.paygZones) {
-      return Object.entries(totalBayCounts)
-        .filter(([type]) => ['Green', 'Yellow', 'Blue', 'White'].includes(type))
-        .sort(([, a], [, b]) => b - a);
+      filtered = filtered.filter(([type]) => ['Green', 'Yellow', 'Blue', 'White'].includes(type));
     }
-    return Object.entries(totalBayCounts)
-      .sort(([, a], [, b]) => b - a);
-  }, [totalBayCounts, filters.paygZones]);
+
+    return filtered.sort(([, a], [, b]) => b - a);
+  }, [totalBayCounts, filters.monitoredCarparks, filters.paygZones, monitoredCarparks]);
 
   return (
     <>
@@ -203,6 +206,15 @@ export default function SideMenu({
                     className="rounded text-blue-600 focus:ring-blue-500"
                   />
                   <span className="text-sm font-medium">PAYG Zones</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={filters.monitoredCarparks}
+                    onChange={() => handleFilterChange('monitoredCarparks')}
+                    className="rounded text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium">ParkAid Monitored Carparks</span>
                 </div>
               </div>
             </div>

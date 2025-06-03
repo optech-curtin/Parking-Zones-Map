@@ -29,6 +29,13 @@ export default function MapViewComponent() {
   const [parkingLots, setParkingLots] = useState<string[]>([]);
   const [isZoneInfoMinimized, setIsZoneInfoMinimized] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [monitoredCarparks, setMonitoredCarparks] = useState<string[]>([]);
+  const [filters, setFilters] = useState({ 
+    monitoredCarparks: false,
+    paygZones: false 
+  });
+  const [allBayCounts, setAllBayCounts] = useState<{ [key: string]: number }>({});
+  const [monitoredBayCounts, setMonitoredBayCounts] = useState<{ [key: string]: number }>({});
   
   // Fetch all bay types when map loads
   useEffect(() => {
@@ -65,7 +72,7 @@ export default function MapViewComponent() {
         const uniqueParkingLots = [...new Set(parkingLotsResult.features.map((f: __esri.Graphic) => f.attributes.Zone.trim()))];
         setParkingLots(uniqueParkingLots);
 
-        // Calculate total bay type counts
+        // Calculate total bay type counts for all carparks
         const totalCounts: { [key: string]: number } = {};
         const bayColors: { [key: string]: string } = {
           // Add your color mappings here
@@ -139,8 +146,7 @@ export default function MapViewComponent() {
           });
         }
 
-        console.log('Bay type counts:', totalCounts);
-        setTotalBayCounts(totalCounts);
+        setAllBayCounts(totalCounts);
         setBayColors(bayColors);
       } catch (error) {
         console.error('Error fetching all bay types:', error);
@@ -151,6 +157,78 @@ export default function MapViewComponent() {
 
     fetchAllBayTypes();
   }, []);
+
+  // Fetch monitored carparks and their bay counts when map loads
+  useEffect(() => {
+    const fetchMonitoredCarparks = async () => {
+      try {
+        const parkingLayer = new FeatureLayer({
+          url: "https://arcgis.curtin.edu.au/arcgis/rest/services/ParKam/ParKam/FeatureServer/4"
+        });
+
+        const underBaysLayer = new FeatureLayer({
+          url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays_Under/FeatureServer/0"
+        });
+
+        const baysLayer = new FeatureLayer({
+          url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays/FeatureServer/0"
+        });
+
+        // Get monitored carparks
+        const query = parkingLayer.createQuery();
+        query.where = "isMonitored = 'True'";
+        query.outFields = ['Zone'];
+        
+        const result = await parkingLayer.queryFeatures(query);
+        const monitored = result.features.map((f: __esri.Graphic) => f.attributes.Zone.trim());
+        setMonitoredCarparks(monitored);
+
+        // Calculate bay counts for monitored carparks
+        const monitoredCounts: { [key: string]: number } = {};
+
+        // Query features for monitored carparks
+        const underBaysQuery = underBaysLayer.createQuery();
+        underBaysQuery.where = monitored.length > 0 
+          ? `parkinglot IN ('${monitored.join("','")}')`
+          : '1=1';
+        underBaysQuery.returnGeometry = false;
+        underBaysQuery.outFields = ['*'];
+        
+        const baysQuery = baysLayer.createQuery();
+        baysQuery.where = monitored.length > 0 
+          ? `parkinglot IN ('${monitored.join("','")}')`
+          : '1=1';
+        baysQuery.returnGeometry = false;
+        baysQuery.outFields = ['*'];
+
+        // Execute queries
+        const [underBaysResult, baysResult] = await Promise.all([
+          underBaysLayer.queryFeatures(underBaysQuery),
+          baysLayer.queryFeatures(baysQuery)
+        ]);
+
+        // Combine all features
+        const allFeatures = [...underBaysResult.features, ...baysResult.features];
+
+        // Calculate bay type counts
+        allFeatures.forEach(feature => {
+          const bayType = feature.attributes.baytype || 'Unknown';
+          monitoredCounts[bayType] = (monitoredCounts[bayType] || 0) + 1;
+        });
+
+        setMonitoredBayCounts(monitoredCounts);
+      } catch (error) {
+        console.error('Error fetching monitored carparks:', error);
+      }
+    };
+
+    fetchMonitoredCarparks();
+  }, []);
+
+  // Update totalBayCounts based on filter
+  useEffect(() => {
+    setTotalBayCounts(filters.monitoredCarparks ? monitoredBayCounts : allBayCounts);
+  }, [filters.monitoredCarparks, monitoredBayCounts, allBayCounts]);
 
   // Update bay type counts when a parking lot is selected
   useEffect(() => {
@@ -286,7 +364,7 @@ export default function MapViewComponent() {
     };
   }, []);
 
-  // Update renderer when carpark status or highlight changes
+  // Update renderer when carpark status, highlight, or monitored filter changes
   useEffect(() => {
     if (!viewRef.current) return;
 
@@ -319,6 +397,18 @@ export default function MapViewComponent() {
               }
             }
           }] : []),
+          // Monitored parking lots (only when filter is active)
+          ...(filters.monitoredCarparks ? monitoredCarparks.map((zone: string) => ({
+            value: zone,
+            symbol: {
+              type: "simple-fill" as const,
+              color: [0, 0, 255, 0.3],
+              outline: {
+                color: [0, 0, 255, 1],
+                width: 2
+              }
+            }
+          })) : []),
           // Closed parking lots from status
           ...closedZones.map((zone: string) => ({
             value: zone,
@@ -356,7 +446,7 @@ export default function MapViewComponent() {
         }
       };
     });
-  }, [carparkStatus, highlightedParkingLot]);
+  }, [carparkStatus, highlightedParkingLot, monitoredCarparks, filters.monitoredCarparks]);
 
   // Add click handlers (updates when toggleCarparkStatus changes)
   useEffect(() => {
@@ -539,6 +629,9 @@ export default function MapViewComponent() {
         setIsZoneInfoMinimized={setIsZoneInfoMinimized}
         isFilterOpen={isFilterOpen}
         setIsFilterOpen={setIsFilterOpen}
+        monitoredCarparks={monitoredCarparks}
+        filters={filters}
+        setFilters={setFilters}
       />
       <div ref={mapDivRef} className="w-full h-screen" />
       <ParkingInfoTable 
