@@ -37,7 +37,6 @@ export default function SideMenu({
   setIsZoneInfoMinimized,
   isFilterOpen,
   setIsFilterOpen,
-  monitoredCarparks,
   filters,
   setFilters,
 }: SideMenuProps) {
@@ -58,7 +57,7 @@ export default function SideMenu({
     }
 
     return filtered.sort(([, a], [, b]) => b - a);
-  }, [totalBayCounts, filters.monitoredCarparks, filters.paygZones, monitoredCarparks]);
+  }, [totalBayCounts, filters.paygZones]);
 
   return (
     <>

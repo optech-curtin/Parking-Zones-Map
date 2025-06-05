@@ -21,7 +21,7 @@ interface UserInfo {
 
 export default function HomePage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+  const [, setUserInfo] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Next.js will expose NEXT_PUBLIC_… vars to the browser
@@ -66,10 +66,11 @@ export default function HomePage() {
         await portal.load();
 
         if (portal.user) {
-          setUserInfo({
+          const userInfo: UserInfo = {
             fullName: portal.user.fullName ?? "Unknown User",
             username: portal.user.username ?? "unknown"
-          });
+          };
+          setUserInfo(userInfo);
           setIsAuthenticated(true);
         }
       } catch {
@@ -81,7 +82,7 @@ export default function HomePage() {
     }
 
     initArcGISAuth();
-  }, [portalUrl, appId]);
+  }, [portalUrl, appId, setUserInfo]);
 
   // Trigger OAuth redirect
   const handleSignIn = async () => {
