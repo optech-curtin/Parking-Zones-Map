@@ -24,6 +24,10 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_ARCGIS_PORTAL_URL: ${{ secrets.NEXT_PUBLIC_ARCGIS_PORTAL_URL }}
+      NEXT_PUBLIC_ARCGIS_APP_ID: ${{ secrets.NEXT_PUBLIC_ARCGIS_APP_ID }}
+      NEXT_PUBLIC_ARCGIS_API_KEY: ${{ secrets.NEXT_PUBLIC_ARCGIS_API_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,6 +44,20 @@ jobs:
       - name: Setup Pages
         id: setup_pages
         uses: actions/configure-pages@v5
+
+      - name: Debug Environment Variables
+        run: |
+          echo "Checking if environment variables are set:"
+          if [ -n "$NEXT_PUBLIC_ARCGIS_PORTAL_URL" ]; then
+            echo "NEXT_PUBLIC_ARCGIS_PORTAL_URL is set"
+          else
+            echo "NEXT_PUBLIC_ARCGIS_PORTAL_URL is not set"
+          fi
+          if [ -n "$NEXT_PUBLIC_ARCGIS_APP_ID" ]; then
+            echo "NEXT_PUBLIC_ARCGIS_APP_ID is set"
+          else
+            echo "NEXT_PUBLIC_ARCGIS_APP_ID is not set"
+          fi
 
       - name: Build with Next.js
         run: |
