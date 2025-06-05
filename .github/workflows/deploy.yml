@@ -49,6 +49,9 @@ jobs:
           cp -r .next/static/* out/_next/static/
         env:
           PAGES_BASE_PATH: ${{ steps.setup_pages.outputs.base_path }}
+          NEXT_PUBLIC_ARCGIS_PORTAL_URL: ${{ secrets.NEXT_PUBLIC_ARCGIS_PORTAL_URL }}
+          NEXT_PUBLIC_ARCGIS_APP_ID: ${{ secrets.NEXT_PUBLIC_ARCGIS_APP_ID }}
+          NEXT_PUBLIC_ARCGIS_API_KEY: ${{ secrets.NEXT_PUBLIC_ARCGIS_API_KEY }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
