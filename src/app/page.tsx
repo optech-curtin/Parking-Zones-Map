@@ -75,8 +75,8 @@ export default function HomePage() {
           setIsAuthenticated(true);
         }
       } catch {
-        // Not signed in yet
-        setIsAuthenticated(false);
+        // Not signed in yet - automatically trigger sign in
+        IdentityManager.getCredential(`${portalUrl}/sharing`);
       } finally {
         setLoading(false);
       }
@@ -84,13 +84,6 @@ export default function HomePage() {
 
     initArcGISAuth();
   }, [portalUrl, appId, setUserInfo]);
-
-  // Trigger OAuth redirect
-  const handleSignIn = async () => {
-    if (!portalUrl) return;
-    const { default: IdentityManager } = await import("@arcgis/core/identity/IdentityManager");
-    IdentityManager.getCredential(`${portalUrl}/sharing`);
-  };
 
   // Sign out (destroy stored credentials)
   const handleSignOut = async () => {
@@ -108,18 +101,9 @@ export default function HomePage() {
     );
   }
 
+  // Only show the app content when authenticated
   if (!isAuthenticated) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen">
-        <h2 className="text-2xl font-semibold mb-4">Sign In to ArcGIS Enterprise</h2>
-        <button
-          onClick={handleSignIn}
-          className="px-6 py-3 text-lg bg-[#0079c1] text-white rounded hover:bg-[#0069a9] transition-colors"
-        >
-          Sign In
-        </button>
-      </div>
-    );
+    return null; // Return null while redirecting to ArcGIS sign-in
   }
 
   // Signed in: show header + our WebMap
