@@ -4,6 +4,8 @@ import { useParking } from '../context/ParkingContext';
 import FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import type { ParkingFeatureAttributes } from '../types';
 
+const PARKING_LAYER_URL = "https://arcgis.curtin.edu.au/arcgis/rest/services/ParKam/ParKam/FeatureServer/4";
+
 export function useMap() {
   const mapDivRef = useRef<HTMLDivElement>(null);
   const mapServiceRef = useRef<MapService | null>(null);
@@ -90,7 +92,7 @@ export function useMap() {
 
       if (shouldZoom) {
         const parkingLayer = new FeatureLayer({
-          url: "https://arcgis.curtin.edu.au/arcgis/rest/services/ParKam/ParKam/FeatureServer/4"
+          url: PARKING_LAYER_URL
         });
 
         const query = parkingLayer.createQuery();
@@ -152,16 +154,13 @@ export function useMap() {
         // Check environment variables
         const webmapId = process.env.NEXT_PUBLIC_ARCGIS_WEBMAP_ID;
         const portalUrl = process.env.NEXT_PUBLIC_ARCGIS_PORTAL_URL;
-        const parkingLayerUrl = process.env.NEXT_PUBLIC_ARCGIS_PARKING_LAYER_URL;
 
-        if (!webmapId || !portalUrl || !parkingLayerUrl) {
+        if (!webmapId || !portalUrl) {
           throw new Error(
             `Missing required environment variables: ${
               !webmapId ? 'NEXT_PUBLIC_ARCGIS_WEBMAP_ID ' : ''
             }${
-              !portalUrl ? 'NEXT_PUBLIC_ARCGIS_PORTAL_URL ' : ''
-            }${
-              !parkingLayerUrl ? 'NEXT_PUBLIC_ARCGIS_PARKING_LAYER_URL' : ''
+              !portalUrl ? 'NEXT_PUBLIC_ARCGIS_PORTAL_URL' : ''
             }`
           );
         }

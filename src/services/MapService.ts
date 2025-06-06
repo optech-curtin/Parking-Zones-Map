@@ -4,6 +4,8 @@ import WebMap from '@arcgis/core/WebMap';
 import esriConfig from "@arcgis/core/config";
 import { CacheService } from './CacheService';
 
+const PARKING_LAYER_URL = "https://arcgis.curtin.edu.au/arcgis/rest/services/ParKam/ParKam/FeatureServer/4";
+
 // Feature attribute interfaces
 interface BayFeatureAttributes {
   OBJECTID: number;
@@ -201,22 +203,17 @@ export class MapService {
 
   private async initializeParkingLayer(view: MapView): Promise<void> {
     try {
-      const parkingLayerUrl = process.env.NEXT_PUBLIC_ARCGIS_PARKING_LAYER_URL;
-      if (!parkingLayerUrl) {
-        throw new MapServiceError('ARCGIS_PARKING_LAYER_URL environment variable is not set');
-      }
-
       // Get the existing parking layer from the WebMap
       const parkingLayer = view.map.layers.find(layer => {
         if (!(layer instanceof FeatureLayer)) return false;
         const featureLayer = layer as FeatureLayer;
-        return typeof featureLayer.url === 'string' && featureLayer.url.startsWith(parkingLayerUrl);
+        return typeof featureLayer.url === 'string' && featureLayer.url.startsWith(PARKING_LAYER_URL);
       }) as FeatureLayer;
 
       if (!parkingLayer) {
         // Create a new parking layer if not found in WebMap
         const newParkingLayer = new FeatureLayer({
-          url: parkingLayerUrl,
+          url: PARKING_LAYER_URL,
           outFields: ['Zone', 'status', 'isMonitored']
         });
         
