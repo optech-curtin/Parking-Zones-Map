@@ -128,7 +128,10 @@ export function useMap() {
     let isMounted = true;
 
     const initializeMapAndData = async () => {
-      if (!mapDivRef.current) return;
+      if (!mapDivRef.current) {
+        console.error('Map container ref is not available');
+        return;
+      }
 
       const { 
         setIsLoading, 
@@ -146,18 +149,39 @@ export function useMap() {
       try {
         setIsLoading(true);
         
+        // Check environment variables
+        const webmapId = process.env.NEXT_PUBLIC_ARCGIS_WEBMAP_ID;
+        const portalUrl = process.env.NEXT_PUBLIC_ARCGIS_PORTAL_URL;
+        const parkingLayerUrl = process.env.NEXT_PUBLIC_ARCGIS_PARKING_LAYER_URL;
+
+        if (!webmapId || !portalUrl || !parkingLayerUrl) {
+          throw new Error(
+            `Missing required environment variables: ${
+              !webmapId ? 'NEXT_PUBLIC_ARCGIS_WEBMAP_ID ' : ''
+            }${
+              !portalUrl ? 'NEXT_PUBLIC_ARCGIS_PORTAL_URL ' : ''
+            }${
+              !parkingLayerUrl ? 'NEXT_PUBLIC_ARCGIS_PARKING_LAYER_URL' : ''
+            }`
+          );
+        }
+
+        console.log('Initializing map service...');
         // Initialize map service
         const mapService = new MapService();
         mapServiceRef.current = mapService;
 
+        console.log('Initializing map...');
         // Initialize the map
         await mapService.initializeMap(mapDivRef.current);
 
+        console.log('Loading and processing features...');
         // Load and process features
         await mapService.loadAndProcessFeatures();
 
         if (!isMounted) return;
 
+        console.log('Getting required data...');
         // Get all required data
         const [lots, monitoredCarparks, bayCounts] = await Promise.all([
           mapService.getParkingLots(),
@@ -167,6 +191,7 @@ export function useMap() {
 
         if (!isMounted) return;
 
+        console.log('Updating state...');
         // Update all state in a single batch
         setParkingLots(lots);
         setMonitoredCarparks(monitoredCarparks);
@@ -174,6 +199,7 @@ export function useMap() {
         setTotalBayCounts(mapService.getTotalBayCounts());
         setMonitoredBayCounts(mapService.getMonitoredBayCounts());
 
+        console.log('Setting up click handler...');
         // Set up click handler
         const view = mapService.getView();
         if (view) {
@@ -216,7 +242,10 @@ export function useMap() {
       } catch (error) {
         console.error('Error initializing map:', error);
         if (isMounted) {
-          setError(error instanceof Error ? error : new Error('Failed to initialize map'));
+          const errorMessage = error instanceof Error ? error.message : 'Failed to initialize map';
+          const errorStack = error instanceof Error ? error.stack : undefined;
+          console.error('Error details:', { message: errorMessage, stack: errorStack });
+          setError(new Error(`Failed to initialize map: ${errorMessage}`));
         }
       } finally {
         if (isMounted) {
