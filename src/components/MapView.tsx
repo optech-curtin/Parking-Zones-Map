@@ -321,7 +321,7 @@ export default function MapViewComponent() {
 
     const webmap = new WebMap({
       portalItem: {
-        id: "34e3e14cea754a41a9b7f8455fef8c48"
+        id: process.env.NEXT_PUBLIC_ARCGIS_WEBMAP_ID || "34e3e14cea754a41a9b7f8455fef8c48"
       }
     });
     
