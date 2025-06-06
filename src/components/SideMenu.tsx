@@ -1,38 +1,22 @@
 'use client';
 
 import React from 'react';
+import { useParking } from '../context/ParkingContext';
 
 interface SideMenuProps {
   isOpen: boolean;
-  selectedParkingLot: string;
   onToggleMenu: () => void;
-  onToggleCarpark: () => void;
-  carparkStatus: { [key: string]: boolean };
-  closedBayCounts: { [key: string]: number };
-  totalBayCounts: { [key: string]: number };
-  bayColors: { [key: string]: string };
-  onResetAll: () => void;
-  isLoading: boolean;
   isZoneInfoMinimized: boolean;
   setIsZoneInfoMinimized: (minimized: boolean) => void;
   isFilterOpen: boolean;
   setIsFilterOpen: (open: boolean) => void;
-  monitoredCarparks: string[];
   filters: { monitoredCarparks: boolean; paygZones: boolean };
   setFilters: React.Dispatch<React.SetStateAction<{ monitoredCarparks: boolean; paygZones: boolean }>>;
 }
 
 export default function SideMenu({
   isOpen,
-  selectedParkingLot,
   onToggleMenu,
-  onToggleCarpark,
-  carparkStatus,
-  closedBayCounts,
-  totalBayCounts,
-  bayColors,
-  onResetAll,
-  isLoading,
   isZoneInfoMinimized,
   setIsZoneInfoMinimized,
   isFilterOpen,
@@ -40,6 +24,20 @@ export default function SideMenu({
   filters,
   setFilters,
 }: SideMenuProps) {
+  const { 
+    state: { 
+      selectedParkingLot, 
+      carparkStatus, 
+      closedBayCounts, 
+      totalBayCounts,
+      monitoredBayCounts,
+      bayColors, 
+      isLoading 
+    },
+    toggleCarparkStatus,
+    resetAllCarparks
+  } = useParking();
+
   const isCarparkOpen = !carparkStatus[selectedParkingLot];
 
   const handleFilterChange = (filterType: 'monitoredCarparks' | 'paygZones') => {
@@ -50,14 +48,16 @@ export default function SideMenu({
   };
 
   const filteredBayTypes = React.useMemo(() => {
-    let filtered = Object.entries(totalBayCounts);
+    // Use monitoredBayCounts if the monitoredCarparks filter is active, otherwise use totalBayCounts
+    const counts = filters.monitoredCarparks ? monitoredBayCounts : totalBayCounts;
+    let filtered = Object.entries(counts);
 
     if (filters.paygZones) {
       filtered = filtered.filter(([type]) => ['Green', 'Yellow', 'Blue', 'White'].includes(type));
     }
 
     return filtered.sort(([, a], [, b]) => b - a);
-  }, [totalBayCounts, filters.paygZones]);
+  }, [totalBayCounts, monitoredBayCounts, filters.paygZones, filters.monitoredCarparks]);
 
   return (
     <>
@@ -238,7 +238,7 @@ export default function SideMenu({
                   <h3 className="text-lg font-semibold mb-4">{selectedParkingLot}</h3>
                   <div className="space-y-4">
                     <button
-                      onClick={onToggleCarpark}
+                      onClick={() => toggleCarparkStatus(selectedParkingLot)}
                       className={`w-full p-2 rounded ${
                         isCarparkOpen
                           ? 'bg-red-500 hover:bg-red-600'
@@ -248,7 +248,7 @@ export default function SideMenu({
                       {isCarparkOpen ? 'Close Parking Lot' : 'Open Parking Lot'}
                     </button>
                     <button
-                      onClick={onResetAll}
+                      onClick={resetAllCarparks}
                       className="w-full p-2 bg-gray-200 hover:bg-gray-300 rounded transition-colors"
                     >
                       Reset All

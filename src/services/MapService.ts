@@ -1,4 +1,44 @@
 import FeatureLayer from '@arcgis/core/layers/FeatureLayer';
+import MapView from '@arcgis/core/views/MapView';
+import WebMap from '@arcgis/core/WebMap';
+import esriConfig from "@arcgis/core/config";
+
+// Feature attribute interfaces
+interface BayFeatureAttributes {
+  OBJECTID: number;
+  parkinglot: string;
+  baytype: string;
+  [key: string]: any; // For other potential attributes
+}
+
+interface ParkingFeatureAttributes {
+  Zone: string;
+  status: string;
+  isMonitored: string;
+  [key: string]: any; // For other potential attributes
+}
+
+// Error types
+class MapServiceError extends Error {
+  constructor(message: string, public readonly cause?: Error) {
+    super(message);
+    this.name = 'MapServiceError';
+  }
+}
+
+class FeatureQueryError extends MapServiceError {
+  constructor(message: string, public readonly layerId: string, cause?: Error) {
+    super(message, cause);
+    this.name = 'FeatureQueryError';
+  }
+}
+
+class LayerInitializationError extends MapServiceError {
+  constructor(message: string, public readonly layerId: string, cause?: Error) {
+    super(message, cause);
+    this.name = 'LayerInitializationError';
+  }
+}
 
 /**
  * Interface to represent the count details for a parking lot.
@@ -11,69 +51,423 @@ export interface ParkingLotCount {
   };
 }
 
-/**
- * Queries the feature layer to count how many features exist per parking lot
- * and then aggregates the counts by bay type.
- *
- * Example output for parking lot "PL1":
- * {
- *   parkingLot: "PL1",
- *   total: 10,
- *   bayCounts: {
- *     ACROD: 2,
- *     Green: 8
- *   }
- * }
- *
- * @param layer - The FeatureLayer containing the carpark features.
- * @returns A promise that resolves with an array of ParkingLotCount objects.
- */
-export async function getParkingLotCounts(
-  layer: FeatureLayer
-): Promise<ParkingLotCount[]> {
-  try {
-    // Create a query to fetch all features with the fields we need.
-    const query = layer.createQuery();
-    query.where = '1=1';
-    query.outFields = ['parkinglot', 'baytype'];
-    query.returnGeometry = false;
+export interface BayTypeCount {
+  type: string;
+  count: number;
+}
 
-    // Execute the query.
-    const results = await layer.queryFeatures(query);
-    const counts: { [key: string]: ParkingLotCount } = {};
+interface FeatureLayerInfo {
+  layer: FeatureLayer;
+  features: __esri.Graphic[];
+}
 
-    // Iterate through each feature.
-    results.features.forEach((feature) => {
-      const attributes = feature.attributes;
-      const parkingLot: string = attributes.parkinglot;
-      const bayType: string = attributes.baytype;
+export class MapService {
+  private view: MapView | null = null;
+  private parkingLayer: FeatureLayer | null = null;
+  private featuresLoaded = false;
+  private cachedFeatures: { [key: string]: __esri.Graphic[] } = {};
+  private cachedTotalCounts: { [key: string]: number } = {};
+  private cachedMonitoredCounts: { [key: string]: number } = {};
+  private cachedParkingLotCounts: { [key: string]: BayTypeCount[] } = {};
 
-      // If a parking lot attribute is missing, skip this feature.
-      if (!parkingLot) return;
+  constructor() {
+    const portalUrl = process.env.NEXT_PUBLIC_ARCGIS_PORTAL_URL;
+    if (!portalUrl) {
+      throw new MapServiceError('ARCGIS_PORTAL_URL environment variable is not set');
+    }
+    esriConfig.portalUrl = portalUrl;
+  }
 
-      // Initialize the parking lot entry if not already present.
-      if (!counts[parkingLot]) {
-        counts[parkingLot] = {
-          parkingLot,
-          total: 0,
-          bayCounts: {},
-        };
+  // Helper function to clean strings
+  cleanString(str: string): string {
+    if (!str) return 'Unknown';
+    
+    // Special handling for Green and Yellow to preserve exact matches
+    if (str.trim() === 'Green' || str.trim() === 'Yellow') {
+      return str.trim();
+    }
+
+    return str
+      .replace(/['"]/g, '') // Remove quotes
+      .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove zero-width spaces and other invisible characters
+      .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+      .replace(/[^\x20-\x7E]/g, '') // Remove non-printable characters
+      .replace(/[^a-zA-Z0-9]/g, '') // Remove all non-alphanumeric characters
+      .trim();
+  }
+
+  // Helper function to query all features with pagination
+  private async queryAllFeatures(layer: FeatureLayer): Promise<__esri.Graphic[]> {
+    try {
+      const query = layer.createQuery();
+      query.returnGeometry = false;
+      query.outFields = ['*'];
+      query.where = '1=1';
+      query.num = 1000; // Use smaller chunks for pagination
+      
+      let allFeatures: __esri.Graphic[] = [];
+      let hasMore = true;
+      let start = 0;
+
+      while (hasMore) {
+        query.start = start;
+        const result = await layer.queryFeatures(query);
+        
+        if (!result.features) {
+          throw new FeatureQueryError(
+            `No features returned from query for layer ${layer.id}`,
+            layer.id
+          );
+        }
+
+        allFeatures = [...allFeatures, ...result.features];
+        
+        if (result.features.length < query.num) {
+          hasMore = false;
+        } else {
+          start += query.num;
+        }
       }
 
-      // Increment the total count for this parking lot.
-      counts[parkingLot].total += 1;
+      return allFeatures;
+    } catch (error) {
+      throw new FeatureQueryError(
+        `Failed to query features from layer ${layer.id}`,
+        layer.id,
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
 
-      // Increment the count for this bay type.
-      if (!counts[parkingLot].bayCounts[bayType]) {
-        counts[parkingLot].bayCounts[bayType] = 0;
+  async initializeMap(container: HTMLDivElement): Promise<MapView> {
+    try {
+      const webmapId = process.env.NEXT_PUBLIC_ARCGIS_WEBMAP_ID;
+      if (!webmapId) {
+        throw new MapServiceError('ARCGIS_WEBMAP_ID environment variable is not set');
       }
-      counts[parkingLot].bayCounts[bayType] += 1;
-    });
 
-    // Convert the counts object into an array for easier consumption.
-    return Object.values(counts);
-  } catch (error) {
-    console.error('Error retrieving parking lot counts:', error);
-    throw error;
+      // Create the map view first
+      const view = new MapView({
+        container,
+        center: [115.894, -32.005],
+        zoom: 14,
+        popupEnabled: false
+      });
+
+      // Create and load the webmap
+      const webmap = new WebMap({
+        portalItem: {
+          id: webmapId
+        }
+      });
+
+      // Wait for the webmap to load
+      await webmap.load();
+
+      // Set the map to the view
+      view.map = webmap;
+
+      // Wait for the view to load
+      await view.when();
+
+      // Initialize parking layer
+      await this.initializeParkingLayer(view);
+
+      this.view = view;
+      return view;
+    } catch (error) {
+      throw new MapServiceError(
+        'Failed to initialize map',
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  private async initializeParkingLayer(view: MapView): Promise<void> {
+    try {
+      const parkingLayerUrl = process.env.NEXT_PUBLIC_ARCGIS_PARKING_LAYER_URL;
+      if (!parkingLayerUrl) {
+        throw new MapServiceError('ARCGIS_PARKING_LAYER_URL environment variable is not set');
+      }
+
+      // Get the existing parking layer from the WebMap
+      const parkingLayer = view.map.layers.find(layer => 
+        layer instanceof FeatureLayer && 
+        (layer as any).url.startsWith(parkingLayerUrl)
+      ) as FeatureLayer;
+
+      if (!parkingLayer) {
+        // Create a new parking layer if not found in WebMap
+        const newParkingLayer = new FeatureLayer({
+          url: parkingLayerUrl,
+          outFields: ['Zone', 'status', 'isMonitored']
+        });
+        
+        try {
+          await newParkingLayer.load();
+          view.map.add(newParkingLayer);
+          newParkingLayer.id = "parkingLayer";
+          this.parkingLayer = newParkingLayer;
+        } catch (error) {
+          throw new LayerInitializationError(
+            'Failed to load new parking layer',
+            'parkingLayer',
+            error instanceof Error ? error : undefined
+          );
+        }
+        return;
+      }
+
+      try {
+        await parkingLayer.load();
+        parkingLayer.id = "parkingLayer";
+        parkingLayer.outFields = ['Zone', 'status', 'isMonitored'];
+        this.parkingLayer = parkingLayer;
+      } catch (error) {
+        throw new LayerInitializationError(
+          'Failed to load existing parking layer',
+          'parkingLayer',
+          error instanceof Error ? error : undefined
+        );
+      }
+    } catch (error) {
+      if (error instanceof LayerInitializationError) {
+        throw error;
+      }
+      throw new LayerInitializationError(
+        'Failed to initialize parking layer',
+        'parkingLayer',
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  getView(): MapView | null {
+    return this.view;
+  }
+
+  getParkingLayer(): FeatureLayer | null {
+    return this.parkingLayer;
+  }
+
+  async getParkingLots(): Promise<string[]> {
+    if (!this.parkingLayer) {
+      throw new MapServiceError('Parking layer not initialized');
+    }
+
+    try {
+      const query = this.parkingLayer.createQuery();
+      query.returnGeometry = false;
+      query.outFields = ['Zone'];
+      const result = await this.parkingLayer.queryFeatures(query);
+      
+      if (!result.features) {
+        throw new FeatureQueryError(
+          'No features returned from parking lots query',
+          this.parkingLayer.id
+        );
+      }
+
+      return [...new Set(result.features.map(f => 
+        this.cleanString((f.attributes as ParkingFeatureAttributes).Zone)
+      ))];
+    } catch (error) {
+      throw new FeatureQueryError(
+        'Failed to query parking lots',
+        this.parkingLayer.id,
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  async getMonitoredCarparks(): Promise<string[]> {
+    if (!this.parkingLayer) {
+      throw new MapServiceError('Parking layer not initialized');
+    }
+
+    try {
+      const query = this.parkingLayer.createQuery();
+      query.where = "isMonitored = 'True'";
+      query.outFields = ['Zone'];
+      const result = await this.parkingLayer.queryFeatures(query);
+      
+      if (!result.features) {
+        throw new FeatureQueryError(
+          'No features returned from monitored carparks query',
+          this.parkingLayer.id
+        );
+      }
+
+      return result.features.map(f => 
+        this.cleanString((f.attributes as ParkingFeatureAttributes).Zone)
+      );
+    } catch (error) {
+      throw new FeatureQueryError(
+        'Failed to query monitored carparks',
+        this.parkingLayer.id,
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  async loadAndProcessFeatures(): Promise<void> {
+    try {
+      if (this.featuresLoaded) return;
+
+      // First, get monitored parking lots from the parking layer
+      if (!this.parkingLayer) {
+        throw new MapServiceError('Parking layer not initialized');
+      }
+
+      const parkingQuery = this.parkingLayer.createQuery();
+      parkingQuery.where = "isMonitored = 'True'";
+      parkingQuery.outFields = ['Zone'];
+      const parkingResult = await this.parkingLayer.queryFeatures(parkingQuery);
+      
+      const monitoredParkingLots = new Set(
+        parkingResult.features.map(f => 
+          this.cleanString((f.attributes as ParkingFeatureAttributes).Zone)
+        )
+      );
+
+      console.log('Monitored parking lots:', Array.from(monitoredParkingLots));
+
+      const underBaysLayer = new FeatureLayer({
+        url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays_Under/FeatureServer/0",
+        outFields: ['*']
+      });
+
+      const baysLayer = new FeatureLayer({
+        url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays/FeatureServer/0",
+        outFields: ['*']
+      });
+
+      await Promise.all([
+        underBaysLayer.load(),
+        baysLayer.load()
+      ]);
+
+      const [underBaysFeatures, baysFeatures] = await Promise.all([
+        this.queryAllFeatures(underBaysLayer),
+        this.queryAllFeatures(baysLayer)
+      ]);
+
+      // Initialize counts
+      const totalCounts: { [key: string]: number } = {};
+      const monitoredCounts: { [key: string]: number } = {};
+      const parkingLotCounts: { [key: string]: { [key: string]: number } } = {};
+
+      // Process all features from both layers
+      const allFeatures = [...underBaysFeatures, ...baysFeatures];
+      
+      console.log('Total features to process:', allFeatures.length);
+      
+      // First, organize features by parking lot
+      const featuresByParkingLot: { [key: string]: __esri.Graphic[] } = {};
+      allFeatures.forEach(feature => {
+        const attributes = feature.attributes as BayFeatureAttributes;
+        const parkingLot = this.cleanString(attributes.parkinglot || 'Unknown');
+        if (!featuresByParkingLot[parkingLot]) {
+          featuresByParkingLot[parkingLot] = [];
+        }
+        featuresByParkingLot[parkingLot].push(feature);
+      });
+
+      console.log('Parking lots found:', Object.keys(featuresByParkingLot).length);
+
+      // Then process each parking lot's features
+      Object.entries(featuresByParkingLot).forEach(([parkingLot, features]) => {
+        // Cache features
+        this.cachedFeatures[parkingLot] = features;
+
+        // Initialize parking lot counts
+        if (!parkingLotCounts[parkingLot]) {
+          parkingLotCounts[parkingLot] = {};
+        }
+
+        // Check if this parking lot is monitored
+        const isParkingLotMonitored = monitoredParkingLots.has(parkingLot);
+
+        // Count bay types for this parking lot
+        features.forEach(feature => {
+          const attributes = feature.attributes as BayFeatureAttributes;
+          const bayType = this.cleanString(attributes.baytype || 'Unknown');
+          
+          // Update total counts
+          totalCounts[bayType] = (totalCounts[bayType] || 0) + 1;
+          
+          // Update monitored counts if the parking lot is monitored
+          if (isParkingLotMonitored) {
+            monitoredCounts[bayType] = (monitoredCounts[bayType] || 0) + 1;
+            console.log(`Monitored bay found - Type: ${bayType}, Parking Lot: ${parkingLot}`);
+          }
+          
+          // Update parking lot counts
+          parkingLotCounts[parkingLot][bayType] = (parkingLotCounts[parkingLot][bayType] || 0) + 1;
+        });
+      });
+
+      console.log('Total bay counts:', totalCounts);
+      console.log('Monitored bay counts:', monitoredCounts);
+
+      // Cache the counts
+      this.cachedTotalCounts = totalCounts;
+      this.cachedMonitoredCounts = monitoredCounts;
+      
+      // Convert parking lot counts to BayTypeCount arrays
+      Object.entries(parkingLotCounts).forEach(([lot, counts]) => {
+        this.cachedParkingLotCounts[lot] = Object.entries(counts)
+          .map(([type, count]) => ({ type, count }))
+          .sort((a, b) => b.count - a.count);
+      });
+
+      this.featuresLoaded = true;
+    } catch (error) {
+      throw new MapServiceError(
+        'Failed to load and process features',
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  async getSelectedParkingLotBays(parkingLot: string): Promise<BayTypeCount[]> {
+    try {
+      await this.loadAndProcessFeatures();
+      const cleanedParkingLot = this.cleanString(parkingLot);
+      return this.cachedParkingLotCounts[cleanedParkingLot] || [];
+    } catch (error) {
+      throw new MapServiceError(
+        `Failed to get bay counts for parking lot ${parkingLot}`,
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  async getBayCounts(): Promise<BayTypeCount[]> {
+    try {
+      await this.loadAndProcessFeatures();
+      return Object.entries(this.cachedTotalCounts)
+        .map(([type, count]) => ({ type, count }))
+        .sort((a, b) => b.count - a.count);
+    } catch (error) {
+      throw new MapServiceError(
+        'Failed to get bay counts',
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
+  getTotalBayCounts(): { [key: string]: number } {
+    return this.cachedTotalCounts;
+  }
+
+  getMonitoredBayCounts(): { [key: string]: number } {
+    return this.cachedMonitoredCounts;
+  }
+
+  private async ensureFeaturesLoaded(): Promise<void> {
+    if (!this.featuresLoaded) {
+      await this.loadAndProcessFeatures();
+    }
   }
 }

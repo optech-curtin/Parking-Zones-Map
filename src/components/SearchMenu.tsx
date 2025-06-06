@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 
 interface SearchMenuProps {
-  onSelectParkingLot: (parkingLot: string) => void;
+  onSelectParkingLot: (parkingLot: string, shouldZoom?: boolean) => void;
   parkingLots: string[];
   isZoneInfoMinimized: boolean;
   isFilterOpen: boolean;
@@ -56,7 +56,7 @@ export default function SearchMenu({
         e.preventDefault();
         if (highlightedIndex >= 0 && highlightedIndex < filteredParkingLots.length) {
           const selectedLot = filteredParkingLots[highlightedIndex];
-          onSelectParkingLot(selectedLot);
+          onSelectParkingLot(selectedLot, true);
           setIsFocused(false);
           setHighlightedIndex(-1);
         }
@@ -183,7 +183,7 @@ export default function SearchMenu({
                   <button
                     key={lot}
                     onClick={() => {
-                      onSelectParkingLot(lot);
+                      onSelectParkingLot(lot, true);
                       setIsFocused(false);
                       setHighlightedIndex(-1);
                     }}
