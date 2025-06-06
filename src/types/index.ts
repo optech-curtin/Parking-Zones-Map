@@ -53,6 +53,7 @@ export interface ParkingContextProps {
   setBayTypeCounts: (counts: BayTypeCount[]) => void;
   setSelectedBayCounts: (counts: BayTypeCount[]) => void;
   setTotalBayCounts: (counts: { [key: string]: number }) => void;
+  setMonitoredBayCounts: (counts: { [key: string]: number }) => void;
   setMonitoredCarparks: (carparks: string[]) => void;
   setParkingLots: (lots: string[]) => void;
   setIsLoading: (loading: boolean) => void;

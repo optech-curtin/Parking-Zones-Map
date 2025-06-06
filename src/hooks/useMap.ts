@@ -39,14 +39,12 @@ export function useMap() {
     setSelectedParkingLot(cleanedParkingLot);
     setHighlightedParkingLot(cleanedParkingLot);
 
-    // Get selected parking lot's bays
     try {
       const selectedBays = await mapServiceRef.current?.getSelectedParkingLotBays(cleanedParkingLot);
       if (selectedBays) {
         setSelectedBayCounts(selectedBays);
       }
 
-      // Only zoom if explicitly requested (from search menu)
       if (shouldZoom) {
         const parkingLayer = new FeatureLayer({
           url: "https://arcgis.curtin.edu.au/arcgis/rest/services/ParKam/ParKam/FeatureServer/4"
@@ -87,27 +85,29 @@ export function useMap() {
     setError
   ]);
 
-  // Initialize map
+  // Initialize map and load initial data
   useEffect(() => {
     let isMounted = true;
 
-    const initializeMap = async () => {
+    const initializeMapAndData = async () => {
+      if (!mapDivRef.current) return;
+
       try {
-        if (!mapDivRef.current) return;
-        
         setIsLoading(true);
+        
+        // Initialize map service
         const mapService = new MapService();
         mapServiceRef.current = mapService;
 
         // Initialize the map
         await mapService.initializeMap(mapDivRef.current);
 
-        // Load and process features first
+        // Load and process features
         await mapService.loadAndProcessFeatures();
 
         if (!isMounted) return;
 
-        // Then get the data
+        // Get all required data
         const [lots, monitoredCarparks, bayCounts] = await Promise.all([
           mapService.getParkingLots(),
           mapService.getMonitoredCarparks(),
@@ -116,14 +116,14 @@ export function useMap() {
 
         if (!isMounted) return;
 
-        // Set all the data in a single batch
+        // Update all state in a single batch
         setParkingLots(lots);
         setMonitoredCarparks(monitoredCarparks);
         setBayTypeCounts(bayCounts);
         setTotalBayCounts(mapService.getTotalBayCounts());
         setMonitoredBayCounts(mapService.getMonitoredBayCounts());
 
-        // Set up click handler after everything is loaded
+        // Set up click handler
         const view = mapService.getView();
         if (view) {
           view.on('click', async (event) => {
@@ -144,7 +144,6 @@ export function useMap() {
                 const parkingLot = mapService.cleanString(attributes.Zone || 'Unknown');
                 handleSelectParkingLot(parkingLot);
               } else {
-                // Clear selection if clicking outside a parking lot
                 setSelectedParkingLot('');
                 setHighlightedParkingLot('');
                 setSelectedBayCounts([]);
@@ -167,7 +166,7 @@ export function useMap() {
       }
     };
 
-    initializeMap();
+    initializeMapAndData();
 
     return () => {
       isMounted = false;
@@ -181,14 +180,12 @@ export function useMap() {
     
     if (!view || !parkingLayer) return;
 
-    // Query for features with Closed status
-    const query = parkingLayer.createQuery();
-    query.where = "status = 'Closed'";
-    query.outFields = ['Zone'];
-    
-    // Use a stable reference for the renderer configuration
     const updateRenderer = async () => {
       try {
+        const query = parkingLayer.createQuery();
+        query.where = "status = 'Closed'";
+        query.outFields = ['Zone'];
+        
         const result = await parkingLayer.queryFeatures(query);
         const closedZones = result.features.map(f => f.attributes.Zone.trim());
         
@@ -196,7 +193,6 @@ export function useMap() {
           type: "unique-value" as const,
           field: "Zone",
           uniqueValueInfos: [
-            // Highlighted parking lot
             ...(highlightedParkingLot ? [{
               value: highlightedParkingLot.trim(),
               symbol: {
@@ -208,7 +204,6 @@ export function useMap() {
                 }
               }
             }] : []),
-            // Monitored parking lots (only when filter is active)
             ...(filters.monitoredCarparks ? monitoredCarparks.map(zone => ({
               value: zone,
               symbol: {
@@ -220,7 +215,6 @@ export function useMap() {
                 }
               }
             })) : []),
-            // Closed parking lots from status
             ...closedZones.map(zone => ({
               value: zone,
               symbol: {
@@ -232,7 +226,6 @@ export function useMap() {
                 }
               }
             })),
-            // Manually closed parking lots
             ...Object.entries(carparkStatus)
               .filter(([, isClosed]) => isClosed)
               .map(([zone]) => ({
