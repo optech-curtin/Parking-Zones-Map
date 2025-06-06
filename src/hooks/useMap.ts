@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { MapService } from '../services/MapService';
 import { useParking } from '../context/ParkingContext';
 import FeatureLayer from '@arcgis/core/layers/FeatureLayer';
+import type { ParkingFeatureAttributes } from '../types';
 
 export function useMap() {
   const mapDivRef = useRef<HTMLDivElement>(null);
