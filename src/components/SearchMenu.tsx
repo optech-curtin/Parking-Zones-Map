@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { debounce } from '../utils/debounce';
 
 interface SearchMenuProps {
   onSelectParkingLot: (parkingLot: string, shouldZoom?: boolean) => void;

@@ -58,7 +58,7 @@ export default function SideMenu({
     const filteredCounts: { [key: string]: number } = {};
     Object.entries(carparkStatus)
       .filter(([parkingLot]) => monitoredCarparks.includes(parkingLot) && carparkStatus[parkingLot])
-      .forEach(([parkingLot]) => {
+      .forEach(() => {
         // Add the closed bays for this parking lot
         Object.entries(closedBayCounts).forEach(([type, count]) => {
           filteredCounts[type] = (filteredCounts[type] || 0) + count;

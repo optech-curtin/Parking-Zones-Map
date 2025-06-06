@@ -57,11 +57,6 @@ export interface BayTypeCount {
   count: number;
 }
 
-interface FeatureLayerInfo {
-  layer: FeatureLayer;
-  features: __esri.Graphic[];
-}
-
 export class MapService {
   private view: MapView | null = null;
   private parkingLayer: FeatureLayer | null = null;
@@ -212,10 +207,11 @@ export class MapService {
       }
 
       // Get the existing parking layer from the WebMap
-      const parkingLayer = view.map.layers.find(layer => 
-        layer instanceof FeatureLayer && 
-        (layer as any).url.startsWith(parkingLayerUrl)
-      ) as FeatureLayer;
+      const parkingLayer = view.map.layers.find(layer => {
+        if (!(layer instanceof FeatureLayer)) return false;
+        const featureLayer = layer as FeatureLayer;
+        return typeof featureLayer.url === 'string' && featureLayer.url.startsWith(parkingLayerUrl);
+      }) as FeatureLayer;
 
       if (!parkingLayer) {
         // Create a new parking layer if not found in WebMap
@@ -371,8 +367,6 @@ export class MapService {
         )
       );
 
-      console.log('Monitored parking lots:', Array.from(monitoredParkingLots));
-
       const underBaysLayer = new FeatureLayer({
         url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays_Under/FeatureServer/0",
         outFields: ['*']
@@ -401,8 +395,6 @@ export class MapService {
       // Process all features from both layers
       const allFeatures = [...underBaysFeatures, ...baysFeatures];
       
-      console.log('Total features to process:', allFeatures.length);
-      
       // First, organize features by parking lot
       const featuresByParkingLot: { [key: string]: __esri.Graphic[] } = {};
       allFeatures.forEach(feature => {
@@ -413,8 +405,6 @@ export class MapService {
         }
         featuresByParkingLot[parkingLot].push(feature);
       });
-
-      console.log('Parking lots found:', Object.keys(featuresByParkingLot).length);
 
       // Then process each parking lot's features
       Object.entries(featuresByParkingLot).forEach(([parkingLot, features]) => {
@@ -440,16 +430,12 @@ export class MapService {
           // Update monitored counts if the parking lot is monitored
           if (isParkingLotMonitored) {
             monitoredCounts[bayType] = (monitoredCounts[bayType] || 0) + 1;
-            console.log(`Monitored bay found - Type: ${bayType}, Parking Lot: ${parkingLot}`);
           }
           
           // Update parking lot counts
           parkingLotCounts[parkingLot][bayType] = (parkingLotCounts[parkingLot][bayType] || 0) + 1;
         });
       });
-
-      console.log('Total bay counts:', totalCounts);
-      console.log('Monitored bay counts:', monitoredCounts);
 
       // Cache the counts
       this.cachedTotalCounts = totalCounts;
