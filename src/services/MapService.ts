@@ -2,6 +2,7 @@ import FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import MapView from '@arcgis/core/views/MapView';
 import WebMap from '@arcgis/core/WebMap';
 import esriConfig from "@arcgis/core/config";
+import { CacheService } from './CacheService';
 
 // Feature attribute interfaces
 interface BayFeatureAttributes {
@@ -69,6 +70,8 @@ export class MapService {
   private cachedTotalCounts: { [key: string]: number } = {};
   private cachedMonitoredCounts: { [key: string]: number } = {};
   private cachedParkingLotCounts: { [key: string]: BayTypeCount[] } = {};
+  private cacheService: CacheService;
+  private readonly PAGE_SIZE = 1000;
 
   constructor() {
     const portalUrl = process.env.NEXT_PUBLIC_ARCGIS_PORTAL_URL;
@@ -76,6 +79,7 @@ export class MapService {
       throw new MapServiceError('ARCGIS_PORTAL_URL environment variable is not set');
     }
     esriConfig.portalUrl = portalUrl;
+    this.cacheService = CacheService.getInstance();
   }
 
   // Helper function to clean strings
@@ -96,40 +100,57 @@ export class MapService {
       .trim();
   }
 
-  // Helper function to query all features with pagination
+  // Helper function to query features with pagination
+  private async queryFeaturesWithPagination(
+    layer: FeatureLayer,
+    query: __esri.Query,
+    pageSize: number = this.PAGE_SIZE
+  ): Promise<__esri.Graphic[]> {
+    const cacheKey = `query_${layer.id}_${JSON.stringify(query)}`;
+    const cachedResult = this.cacheService.get<__esri.Graphic[]>(cacheKey);
+    if (cachedResult) {
+      return cachedResult;
+    }
+
+    let allFeatures: __esri.Graphic[] = [];
+    let hasMore = true;
+    let start = 0;
+
+    while (hasMore) {
+      query.start = start;
+      query.num = pageSize;
+      
+      const result = await layer.queryFeatures(query);
+      
+      if (!result.features) {
+        throw new FeatureQueryError(
+          `No features returned from query for layer ${layer.id}`,
+          layer.id
+        );
+      }
+
+      allFeatures = [...allFeatures, ...result.features];
+      
+      if (result.features.length < pageSize) {
+        hasMore = false;
+      } else {
+        start += pageSize;
+      }
+    }
+
+    this.cacheService.set(cacheKey, allFeatures);
+    return allFeatures;
+  }
+
+  // Update the existing queryAllFeatures method to use the new pagination
   private async queryAllFeatures(layer: FeatureLayer): Promise<__esri.Graphic[]> {
     try {
       const query = layer.createQuery();
       query.returnGeometry = false;
       query.outFields = ['*'];
       query.where = '1=1';
-      query.num = 1000; // Use smaller chunks for pagination
       
-      let allFeatures: __esri.Graphic[] = [];
-      let hasMore = true;
-      let start = 0;
-
-      while (hasMore) {
-        query.start = start;
-        const result = await layer.queryFeatures(query);
-        
-        if (!result.features) {
-          throw new FeatureQueryError(
-            `No features returned from query for layer ${layer.id}`,
-            layer.id
-          );
-        }
-
-        allFeatures = [...allFeatures, ...result.features];
-        
-        if (result.features.length < query.num) {
-          hasMore = false;
-        } else {
-          start += query.num;
-        }
-      }
-
-      return allFeatures;
+      return await this.queryFeaturesWithPagination(layer, query);
     } catch (error) {
       throw new FeatureQueryError(
         `Failed to query features from layer ${layer.id}`,
@@ -250,7 +271,14 @@ export class MapService {
     return this.parkingLayer;
   }
 
+  // Update getParkingLots to use caching
   async getParkingLots(): Promise<string[]> {
+    const cacheKey = 'parking_lots';
+    const cachedLots = this.cacheService.get<string[]>(cacheKey);
+    if (cachedLots) {
+      return cachedLots;
+    }
+
     if (!this.parkingLayer) {
       throw new MapServiceError('Parking layer not initialized');
     }
@@ -268,9 +296,12 @@ export class MapService {
         );
       }
 
-      return [...new Set(result.features.map(f => 
+      const lots = [...new Set(result.features.map(f => 
         this.cleanString((f.attributes as ParkingFeatureAttributes).Zone)
       ))];
+      
+      this.cacheService.set(cacheKey, lots);
+      return lots;
     } catch (error) {
       throw new FeatureQueryError(
         'Failed to query parking lots',
@@ -280,7 +311,14 @@ export class MapService {
     }
   }
 
+  // Update getMonitoredCarparks to use caching
   async getMonitoredCarparks(): Promise<string[]> {
+    const cacheKey = 'monitored_carparks';
+    const cachedCarparks = this.cacheService.get<string[]>(cacheKey);
+    if (cachedCarparks) {
+      return cachedCarparks;
+    }
+
     if (!this.parkingLayer) {
       throw new MapServiceError('Parking layer not initialized');
     }
@@ -298,9 +336,12 @@ export class MapService {
         );
       }
 
-      return result.features.map(f => 
+      const carparks = result.features.map(f => 
         this.cleanString((f.attributes as ParkingFeatureAttributes).Zone)
       );
+      
+      this.cacheService.set(cacheKey, carparks);
+      return carparks;
     } catch (error) {
       throw new FeatureQueryError(
         'Failed to query monitored carparks',

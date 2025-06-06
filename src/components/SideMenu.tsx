@@ -31,6 +31,7 @@ export default function SideMenu({
       closedBayCounts, 
       totalBayCounts,
       monitoredBayCounts,
+      monitoredCarparks,
       bayColors, 
       isLoading 
     },
@@ -47,6 +48,25 @@ export default function SideMenu({
     }));
   };
 
+  // Get closed bays for filtered parking lots
+  const filteredClosedBayCounts = React.useMemo(() => {
+    if (!filters.monitoredCarparks) {
+      return closedBayCounts;
+    }
+
+    // Only include closed bays from monitored carparks
+    const filteredCounts: { [key: string]: number } = {};
+    Object.entries(carparkStatus)
+      .filter(([lot]) => monitoredCarparks.includes(lot) && carparkStatus[lot])
+      .forEach(([lot]) => {
+        // Add the closed bays for this parking lot
+        Object.entries(closedBayCounts).forEach(([type, count]) => {
+          filteredCounts[type] = (filteredCounts[type] || 0) + count;
+        });
+      });
+    return filteredCounts;
+  }, [closedBayCounts, carparkStatus, monitoredCarparks, filters.monitoredCarparks]);
+
   const filteredBayTypes = React.useMemo(() => {
     // Use monitoredBayCounts if the monitoredCarparks filter is active, otherwise use totalBayCounts
     const counts = filters.monitoredCarparks ? monitoredBayCounts : totalBayCounts;
@@ -58,6 +78,11 @@ export default function SideMenu({
 
     return filtered.sort(([, a], [, b]) => b - a);
   }, [totalBayCounts, monitoredBayCounts, filters.paygZones, filters.monitoredCarparks]);
+
+  // Calculate total closed bays across all bay types for filtered parking lots
+  const totalClosedBays = React.useMemo(() => {
+    return Object.values(filteredClosedBayCounts).reduce((sum, count) => sum + count, 0);
+  }, [filteredClosedBayCounts]);
 
   return (
     <>
@@ -154,11 +179,11 @@ export default function SideMenu({
                           className="w-4 h-4 rounded-full border border-gray-300"
                           style={{ backgroundColor: bayColors[type] || '#9E9E9E' }}
                         />
-                      <span>{type}</span>
+                        <span>{type}</span>
                       </div>
                       <span className="font-medium">
-                        {totalCount} {closedBayCounts[type] > 0 && (
-                          <span className="text-red-500">({closedBayCounts[type]} closed)</span>
+                        {totalCount} {filteredClosedBayCounts[type] > 0 && (
+                          <span className="text-red-500">({filteredClosedBayCounts[type]} closed)</span>
                         )}
                       </span>
                     </div>
@@ -173,7 +198,7 @@ export default function SideMenu({
                     <div className="flex justify-between font-semibold">
                       <span>Total Closed</span>
                       <span className="text-red-500">
-                        {filteredBayTypes.reduce((sum, [type]) => sum + (closedBayCounts[type] || 0), 0)}
+                        {totalClosedBays}
                       </span>
                     </div>
                   </div>
@@ -247,19 +272,21 @@ export default function SideMenu({
                     >
                       {isCarparkOpen ? 'Close Parking Lot' : 'Open Parking Lot'}
                     </button>
-                    <button
-                      onClick={resetAllCarparks}
-                      className="w-full p-2 bg-gray-200 hover:bg-gray-300 rounded transition-colors"
-                    >
-                      Reset All
-                    </button>
                   </div>
                 </>
               ) : (
-                <div className="text-center text-gray-500 py-8">
+                <div className="text-center text-gray-500 py-4">
                   No parking lot selected
                 </div>
               )}
+              <div className="mt-4">
+                <button
+                  onClick={resetAllCarparks}
+                  className="w-full p-2 bg-gray-200 hover:bg-gray-300 rounded transition-colors"
+                >
+                  Reset All
+                </button>
+              </div>
             </div>
           </div>
         </div>

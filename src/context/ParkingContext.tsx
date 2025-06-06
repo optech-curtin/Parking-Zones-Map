@@ -70,13 +70,34 @@ export const ParkingProvider = ({ children }: { children: ReactNode }) => {
 
   const toggleCarparkStatus = (parkingLot: string) => {
     try {
-      setState(prev => ({
-        ...prev,
-        carparkStatus: {
+      setState(prev => {
+        const newCarparkStatus = {
           ...prev.carparkStatus,
           [parkingLot]: !prev.carparkStatus[parkingLot]
+        };
+
+        // Update closed bay counts based on the new status
+        const newClosedBayCounts = { ...prev.closedBayCounts };
+        const isClosed = newCarparkStatus[parkingLot];
+
+        // If the parking lot is being closed, add its bays to closed counts
+        if (isClosed) {
+          prev.selectedBayCounts.forEach(({ type, count }) => {
+            newClosedBayCounts[type] = (newClosedBayCounts[type] || 0) + count;
+          });
+        } else {
+          // If the parking lot is being opened, remove its bays from closed counts
+          prev.selectedBayCounts.forEach(({ type, count }) => {
+            newClosedBayCounts[type] = Math.max(0, (newClosedBayCounts[type] || 0) - count);
+          });
         }
-      }));
+
+        return {
+          ...prev,
+          carparkStatus: newCarparkStatus,
+          closedBayCounts: newClosedBayCounts
+        };
+      });
     } catch (error) {
       setState(prev => ({ 
         ...prev, 
@@ -87,7 +108,11 @@ export const ParkingProvider = ({ children }: { children: ReactNode }) => {
 
   const resetAllCarparks = () => {
     try {
-      setState(prev => ({ ...prev, carparkStatus: {} }));
+      setState(prev => ({
+        ...prev,
+        carparkStatus: {},
+        closedBayCounts: {} // Reset closed bay counts when resetting all carparks
+      }));
     } catch (error) {
       setState(prev => ({ 
         ...prev, 

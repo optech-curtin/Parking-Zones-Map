@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { debounce } from '../utils/debounce';
 
 interface SearchMenuProps {
   onSelectParkingLot: (parkingLot: string, shouldZoom?: boolean) => void;
@@ -21,6 +22,22 @@ export default function SearchMenu({
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  // Create a memoized debounced search function
+  const debouncedSearch = useCallback(
+    debounce((query: string) => {
+      setSearchQuery(query);
+    }, 300),
+    []
+  );
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    // Update the input value immediately for UI responsiveness
+    e.target.value = value;
+    // Debounce the actual search query update
+    debouncedSearch(value);
+  };
 
   const filteredParkingLots = parkingLots
     .filter(lot => lot.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -73,7 +90,10 @@ export default function SearchMenu({
     e.stopPropagation();
     setSearchQuery('');
     setHighlightedIndex(-1);
-    searchInputRef.current?.focus();
+    if (searchInputRef.current) {
+      searchInputRef.current.value = '';
+      searchInputRef.current.focus();
+    }
   };
 
   // Reset highlighted index when search query changes
@@ -134,8 +154,7 @@ export default function SearchMenu({
               ref={searchInputRef}
               type="text"
               placeholder="Search parking lots..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={handleSearchChange}
               onFocus={() => setIsFocused(true)}
               onKeyDown={handleKeyDown}
               className="w-full p-1 pl-8 pr-8 bg-transparent border-none focus:outline-none text-sm"
