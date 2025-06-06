@@ -1,16 +1,11 @@
-interface CacheItem<T> {
-  data: T;
-  timestamp: number;
-  ttl: number;
-}
-
 export class CacheService {
   private static instance: CacheService;
-  private cache: Map<string, CacheItem<any>>;
-  private readonly DEFAULT_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
+  private cache: Map<string, { value: unknown; timestamp: number }>;
+  private readonly TTL: number;
 
-  private constructor() {
+  private constructor(ttl: number = 5 * 60 * 1000) { // 5 minutes default TTL
     this.cache = new Map();
+    this.TTL = ttl;
   }
 
   public static getInstance(): CacheService {
@@ -20,11 +15,10 @@ export class CacheService {
     return CacheService.instance;
   }
 
-  public set<T>(key: string, data: T, ttl: number = this.DEFAULT_TTL): void {
+  public set<T>(key: string, value: T): void {
     this.cache.set(key, {
-      data,
-      timestamp: Date.now(),
-      ttl
+      value,
+      timestamp: Date.now()
     });
   }
 
@@ -32,13 +26,12 @@ export class CacheService {
     const item = this.cache.get(key);
     if (!item) return null;
 
-    const now = Date.now();
-    if (now - item.timestamp > item.ttl) {
+    if (Date.now() - item.timestamp > this.TTL) {
       this.cache.delete(key);
       return null;
     }
 
-    return item.data as T;
+    return item.value as T;
   }
 
   public clear(): void {
@@ -54,7 +47,7 @@ export class CacheService {
     if (!item) return false;
 
     const now = Date.now();
-    if (now - item.timestamp > item.ttl) {
+    if (now - item.timestamp > this.TTL) {
       this.cache.delete(key);
       return false;
     }

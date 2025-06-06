@@ -25,9 +25,9 @@ export default function SearchMenu({
 
   // Create a memoized debounced search function
   const debouncedSearch = useCallback(
-    debounce((query: string) => {
+    (query: string) => {
       setSearchQuery(query);
-    }, 300),
+    },
     []
   );
 

@@ -11,8 +11,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 export default function MapViewComponent() {
   const { 
     state: { 
-      parkingLots,
-      isLoading
+      parkingLots
     }
   } = useParking();
 

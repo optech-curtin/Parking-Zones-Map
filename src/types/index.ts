@@ -3,14 +3,14 @@ export interface BayFeatureAttributes {
   OBJECTID: number;
   parkinglot: string;
   baytype: string;
-  [key: string]: any; // For other potential attributes
+  [key: string]: string | number; // For other potential attributes
 }
 
 export interface ParkingFeatureAttributes {
   Zone: string;
   status: string;
   isMonitored: string;
-  [key: string]: any; // For other potential attributes
+  [key: string]: string | number; // For other potential attributes
 }
 
 // Parking-related interfaces

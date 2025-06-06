@@ -57,8 +57,8 @@ export default function SideMenu({
     // Only include closed bays from monitored carparks
     const filteredCounts: { [key: string]: number } = {};
     Object.entries(carparkStatus)
-      .filter(([lot]) => monitoredCarparks.includes(lot) && carparkStatus[lot])
-      .forEach(([lot]) => {
+      .filter(([parkingLot]) => monitoredCarparks.includes(parkingLot) && carparkStatus[parkingLot])
+      .forEach(([parkingLot]) => {
         // Add the closed bays for this parking lot
         Object.entries(closedBayCounts).forEach(([type, count]) => {
           filteredCounts[type] = (filteredCounts[type] || 0) + count;

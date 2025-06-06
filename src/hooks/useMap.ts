@@ -16,18 +16,12 @@ export function useMap() {
 
   const { 
     state: { 
-      selectedParkingLot,
       highlightedParkingLot,
       carparkStatus,
-      bayTypeCounts,
-      bayColors,
-      isLoading,
-      parkingLots,
       monitoredCarparks
     },
     setSelectedParkingLot,
     setHighlightedParkingLot,
-    toggleCarparkStatus,
     setBayTypeCounts,
     setParkingLots,
     setMonitoredCarparks,
@@ -109,7 +103,19 @@ export function useMap() {
     if (mapDivRef.current) {
       initializeMap();
     }
-  }, []);
+  }, [
+    handleSelectParkingLot,
+    setBayTypeCounts,
+    setError,
+    setHighlightedParkingLot,
+    setIsLoading,
+    setMonitoredBayCounts,
+    setMonitoredCarparks,
+    setParkingLots,
+    setSelectedBayCounts,
+    setSelectedParkingLot,
+    setTotalBayCounts
+  ]);
 
   // Update renderer when carpark status, highlight, or monitored filter changes
   useEffect(() => {
