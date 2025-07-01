@@ -50,22 +50,39 @@ export default function SideMenu({
 
   // Get closed bays for filtered parking lots
   const filteredClosedBayCounts = React.useMemo(() => {
-    if (!filters.monitoredCarparks) {
-      return closedBayCounts;
-    }
-
-    // Only include closed bays from monitored carparks
-    const filteredCounts: { [key: string]: number } = {};
-    Object.entries(carparkStatus)
-      .filter(([parkingLot]) => monitoredCarparks.includes(parkingLot) && carparkStatus[parkingLot])
-      .forEach(() => {
-        // Add the closed bays for this parking lot
-        Object.entries(closedBayCounts).forEach(([type, count]) => {
-          filteredCounts[type] = (filteredCounts[type] || 0) + count;
+    let filteredCounts: { [key: string]: number } = {};
+    
+    if (filters.monitoredCarparks) {
+      // Only include closed bays from monitored carparks
+      Object.entries(carparkStatus)
+        .filter(([parkingLot]) => monitoredCarparks.includes(parkingLot) && carparkStatus[parkingLot])
+        .forEach(() => {
+          // Add the closed bays for this parking lot
+          Object.entries(closedBayCounts).forEach(([type, count]) => {
+            filteredCounts[type] = (filteredCounts[type] || 0) + count;
+          });
         });
+    } else {
+      // Use all closed bay counts
+      filteredCounts = { ...closedBayCounts };
+    }
+    
+    // Apply PAYG filter if active
+    if (filters.paygZones) {
+      const paygTypes = ['Green', 'Yellow', 'Blue', 'White'];
+      const paygFilteredCounts: { [key: string]: number } = {};
+      
+      Object.entries(filteredCounts).forEach(([type, count]) => {
+        if (paygTypes.includes(type)) {
+          paygFilteredCounts[type] = count;
+        }
       });
+      
+      return paygFilteredCounts;
+    }
+    
     return filteredCounts;
-  }, [closedBayCounts, carparkStatus, monitoredCarparks, filters.monitoredCarparks]);
+  }, [closedBayCounts, carparkStatus, monitoredCarparks, filters.monitoredCarparks, filters.paygZones]);
 
   const filteredBayTypes = React.useMemo(() => {
     // Use monitoredBayCounts if the monitoredCarparks filter is active, otherwise use totalBayCounts
