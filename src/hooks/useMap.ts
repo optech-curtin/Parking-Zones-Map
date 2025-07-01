@@ -30,8 +30,10 @@ export function useMap() {
     setMonitoredCarparks,
     setIsLoading,
     setSelectedBayCounts,
+    setSelectedClosedBayCounts,
     setTotalBayCounts,
     setMonitoredBayCounts,
+    setIndividualBayClosedCounts,
     setError
   } = useParking();
 
@@ -44,8 +46,10 @@ export function useMap() {
     setMonitoredCarparks,
     setIsLoading,
     setSelectedBayCounts,
+    setSelectedClosedBayCounts,
     setTotalBayCounts,
     setMonitoredBayCounts,
+    setIndividualBayClosedCounts,
     setError
   });
 
@@ -59,8 +63,10 @@ export function useMap() {
       setMonitoredCarparks,
       setIsLoading,
       setSelectedBayCounts,
+      setSelectedClosedBayCounts,
       setTotalBayCounts,
       setMonitoredBayCounts,
+      setIndividualBayClosedCounts,
       setError
     };
   }, [
@@ -71,8 +77,10 @@ export function useMap() {
     setMonitoredCarparks,
     setIsLoading,
     setSelectedBayCounts,
+    setSelectedClosedBayCounts,
     setTotalBayCounts,
     setMonitoredBayCounts,
+    setIndividualBayClosedCounts,
     setError
   ]);
 
@@ -80,14 +88,22 @@ export function useMap() {
     const cleanedParkingLot = mapServiceRef.current?.cleanString(parkingLot);
     if (!cleanedParkingLot) return;
 
-    const { setSelectedParkingLot, setHighlightedParkingLot, setSelectedBayCounts, setError } = stateSettersRef.current;
+    const { setSelectedParkingLot, setHighlightedParkingLot, setSelectedBayCounts, setSelectedClosedBayCounts, setError } = stateSettersRef.current;
     setSelectedParkingLot(cleanedParkingLot);
     setHighlightedParkingLot(cleanedParkingLot);
 
     try {
-      const selectedBays = await mapServiceRef.current?.getSelectedParkingLotBays(cleanedParkingLot);
+      const [selectedBays, selectedClosedBays] = await Promise.all([
+        mapServiceRef.current?.getSelectedParkingLotBays(cleanedParkingLot),
+        mapServiceRef.current?.getSelectedParkingLotClosedBays(cleanedParkingLot)
+      ]);
+      
       if (selectedBays) {
         setSelectedBayCounts(selectedBays);
+      }
+      
+      if (selectedClosedBays) {
+        setSelectedClosedBayCounts(selectedClosedBays);
       }
 
       if (shouldZoom) {
@@ -142,10 +158,12 @@ export function useMap() {
         setBayTypeCounts, 
         setTotalBayCounts, 
         setMonitoredBayCounts,
+        setIndividualBayClosedCounts,
         setError,
         setSelectedParkingLot,
         setHighlightedParkingLot,
-        setSelectedBayCounts
+        setSelectedBayCounts,
+        setSelectedClosedBayCounts
       } = stateSettersRef.current;
 
       try {
@@ -197,6 +215,7 @@ export function useMap() {
         setBayTypeCounts(bayCounts);
         setTotalBayCounts(mapService.getTotalBayCounts());
         setMonitoredBayCounts(mapService.getMonitoredBayCounts());
+        setIndividualBayClosedCounts(mapService.getIndividualBayClosedCounts());
 
         console.log('Setting up click handler...');
         // Set up click handler
@@ -222,15 +241,24 @@ export function useMap() {
                   setSelectedParkingLot(parkingLot);
                   setHighlightedParkingLot(parkingLot);
                   
-                  const selectedBays = await mapService.getSelectedParkingLotBays(parkingLot);
+                  const [selectedBays, selectedClosedBays] = await Promise.all([
+                    mapService.getSelectedParkingLotBays(parkingLot),
+                    mapService.getSelectedParkingLotClosedBays(parkingLot)
+                  ]);
+                  
                   if (selectedBays) {
                     setSelectedBayCounts(selectedBays);
+                  }
+                  
+                  if (selectedClosedBays) {
+                    setSelectedClosedBayCounts(selectedClosedBays);
                   }
                 }
               } else {
                 setSelectedParkingLot('');
                 setHighlightedParkingLot('');
                 setSelectedBayCounts([]);
+                setSelectedClosedBayCounts({});
               }
             } catch (error) {
               console.error('Error handling map click:', error);

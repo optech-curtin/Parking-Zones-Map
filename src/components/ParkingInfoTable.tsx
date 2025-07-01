@@ -6,7 +6,7 @@ import { ComponentError } from '../utils/errors';
 export default function ParkingInfoTable() {
   const [isMinimized, setIsMinimized] = React.useState(false);
   const { state } = useParking();
-  const { selectedParkingLot, selectedBayCounts, isLoading, bayColors, error } = state;
+  const { selectedParkingLot, selectedBayCounts, selectedClosedBayCounts, isLoading, bayColors, error } = state;
 
   const cleanBayType = (type: string): string => {
     try {
@@ -81,6 +81,7 @@ export default function ParkingInfoTable() {
                     <div className="space-y-2">
                       {selectedBayCounts.map(({ type, count }) => {
                         const cleanedType = cleanBayType(type);
+                        const closedCount = selectedClosedBayCounts[cleanedType] || 0;
                         return (
                           <div key={type} className="flex justify-between items-center">
                             <div className="flex items-center space-x-2">
@@ -92,7 +93,11 @@ export default function ParkingInfoTable() {
                               />
                               <span>{cleanedType}</span>
                             </div>
-                            <span className="font-medium">{count}</span>
+                            <span className="font-medium">
+                              {count} {closedCount > 0 && (
+                                <span className="text-red-500">({closedCount} closed)</span>
+                              )}
+                            </span>
                           </div>
                         );
                       })}
@@ -101,6 +106,14 @@ export default function ParkingInfoTable() {
                           <span>Total Bays</span>
                           <span>{selectedBayCounts.reduce((sum, { count }) => sum + count, 0)}</span>
                         </div>
+                        {Object.values(selectedClosedBayCounts).reduce((sum, count) => sum + count, 0) > 0 && (
+                          <div className="flex justify-between font-semibold">
+                            <span>Total Closed</span>
+                            <span className="text-red-500">
+                              {Object.values(selectedClosedBayCounts).reduce((sum, count) => sum + count, 0)}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

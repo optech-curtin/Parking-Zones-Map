@@ -7,6 +7,8 @@ const initialState: ParkingState = {
   highlightedParkingLot: '',
   carparkStatus: {},
   closedBayCounts: {},
+  individualBayClosedCounts: {},
+  selectedClosedBayCounts: {},
   totalBayCounts: {},
   monitoredBayCounts: {},
   bayTypeCounts: [],
@@ -76,8 +78,8 @@ export const ParkingProvider = ({ children }: { children: ReactNode }) => {
           [parkingLot]: !prev.carparkStatus[parkingLot]
         };
 
-        // Update closed bay counts based on the new status
-        const newClosedBayCounts = { ...prev.closedBayCounts };
+        // Calculate new closed bay counts combining manual and individual bay status
+        const newClosedBayCounts = { ...prev.individualBayClosedCounts }; // Start with individual bay status
         const isClosed = newCarparkStatus[parkingLot];
 
         // If the parking lot is being closed, add its bays to closed counts
@@ -87,8 +89,10 @@ export const ParkingProvider = ({ children }: { children: ReactNode }) => {
           });
         } else {
           // If the parking lot is being opened, remove its bays from closed counts
+          // but keep the individual bay closed counts
           prev.selectedBayCounts.forEach(({ type, count }) => {
-            newClosedBayCounts[type] = Math.max(0, (newClosedBayCounts[type] || 0) - count);
+            const individualClosed = prev.individualBayClosedCounts[type] || 0;
+            newClosedBayCounts[type] = Math.max(individualClosed, (newClosedBayCounts[type] || 0) - count);
           });
         }
 
@@ -111,7 +115,7 @@ export const ParkingProvider = ({ children }: { children: ReactNode }) => {
       setState(prev => ({
         ...prev,
         carparkStatus: {},
-        closedBayCounts: {} // Reset closed bay counts when resetting all carparks
+        closedBayCounts: { ...prev.individualBayClosedCounts } // Reset to only individual bay status
       }));
     } catch (error) {
       setState(prev => ({ 
@@ -139,6 +143,17 @@ export const ParkingProvider = ({ children }: { children: ReactNode }) => {
       setState(prev => ({ 
         ...prev, 
         error: new ContextError('Failed to set selected bay counts', error instanceof Error ? error : undefined)
+      }));
+    }
+  };
+
+  const setSelectedClosedBayCounts = (counts: { [key: string]: number }) => {
+    try {
+      setState(prev => ({ ...prev, selectedClosedBayCounts: counts }));
+    } catch (error) {
+      setState(prev => ({ 
+        ...prev, 
+        error: new ContextError('Failed to set selected closed bay counts', error instanceof Error ? error : undefined)
       }));
     }
   };
@@ -202,6 +217,21 @@ export const ParkingProvider = ({ children }: { children: ReactNode }) => {
     setState(prev => ({ ...prev, error }));
   };
 
+  const setIndividualBayClosedCounts = (counts: { [key: string]: number }) => {
+    try {
+      setState(prev => ({
+        ...prev, 
+        individualBayClosedCounts: counts,
+        closedBayCounts: { ...counts } // Start with individual bay closed counts
+      }));
+    } catch (error) {
+      setState(prev => ({ 
+        ...prev, 
+        error: new ContextError('Failed to set individual bay closed counts', error instanceof Error ? error : undefined)
+      }));
+    }
+  };
+
   const value = {
     state,
     setSelectedParkingLot,
@@ -210,12 +240,14 @@ export const ParkingProvider = ({ children }: { children: ReactNode }) => {
     resetAllCarparks,
     setBayTypeCounts,
     setSelectedBayCounts,
+    setSelectedClosedBayCounts,
     setTotalBayCounts,
     setMonitoredBayCounts,
     setParkingLots,
     setMonitoredCarparks,
     setIsLoading,
-    setError
+    setError,
+    setIndividualBayClosedCounts
   };
 
   return (

@@ -62,10 +62,13 @@ export interface BayTypeCount {
 export class MapService {
   private view: MapView | null = null;
   private parkingLayer: FeatureLayer | null = null;
+  private underBaysLayer: FeatureLayer | null = null;
+  private baysLayer: FeatureLayer | null = null;
   private featuresLoaded = false;
   private cachedFeatures: { [key: string]: __esri.Graphic[] } = {};
   private cachedTotalCounts: { [key: string]: number } = {};
   private cachedMonitoredCounts: { [key: string]: number } = {};
+  private cachedIndividualBayClosedCounts: { [key: string]: number } = {};
   private cachedParkingLotCounts: { [key: string]: BayTypeCount[] } = {};
   private cacheService: CacheService;
   private readonly PAGE_SIZE = 1000;
@@ -191,6 +194,9 @@ export class MapService {
       // Initialize parking layer
       await this.initializeParkingLayer(view);
 
+      // Initialize bay layers
+      await this.initializeBayLayers(view);
+
       this.view = view;
       return view;
     } catch (error) {
@@ -256,12 +262,106 @@ export class MapService {
     }
   }
 
+  private async initializeBayLayers(view: MapView): Promise<void> {
+    try {
+      // Create the bay layers
+      this.underBaysLayer = new FeatureLayer({
+        url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays_Under/FeatureServer/0",
+        outFields: ['*'],
+        renderer: {
+          type: "unique-value",
+          field: "status",
+          uniqueValueInfos: [
+            {
+              value: "Closed",
+              symbol: {
+                type: "simple-fill",
+                color: [255, 0, 0, 0.7], // Red overlay for closed bays
+                outline: {
+                  color: [255, 0, 0, 1],
+                  width: 2
+                }
+              }
+            }
+          ],
+          defaultSymbol: {
+            type: "simple-fill",
+            color: [0, 0, 0, 0], // Transparent for open bays
+            outline: {
+              color: [128, 128, 128, 0.3],
+              width: 0.5
+            }
+          }
+        }
+      });
+
+      this.baysLayer = new FeatureLayer({
+        url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays/FeatureServer/0",
+        outFields: ['*'],
+        renderer: {
+          type: "unique-value",
+          field: "status",
+          uniqueValueInfos: [
+            {
+              value: "Closed",
+              symbol: {
+                type: "simple-fill",
+                color: [255, 0, 0, 0.7], // Red overlay for closed bays
+                outline: {
+                  color: [255, 0, 0, 1],
+                  width: 2
+                }
+              }
+            }
+          ],
+          defaultSymbol: {
+            type: "simple-fill",
+            color: [0, 0, 0, 0], // Transparent for open bays
+            outline: {
+              color: [128, 128, 128, 0.3],
+              width: 0.5
+            }
+          }
+        }
+      });
+
+      // Load the layers
+      await Promise.all([
+        this.underBaysLayer.load(),
+        this.baysLayer.load()
+      ]);
+
+      // Add the layers to the map
+      view.map.add(this.underBaysLayer);
+      view.map.add(this.baysLayer);
+
+      // Set layer IDs for reference
+      this.underBaysLayer.id = "underBaysLayer";
+      this.baysLayer.id = "baysLayer";
+
+    } catch (error) {
+      throw new LayerInitializationError(
+        'Failed to initialize bay layers',
+        'bayLayers',
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
   getView(): MapView | null {
     return this.view;
   }
 
   getParkingLayer(): FeatureLayer | null {
     return this.parkingLayer;
+  }
+
+  getUnderBaysLayer(): FeatureLayer | null {
+    return this.underBaysLayer;
+  }
+
+  getBaysLayer(): FeatureLayer | null {
+    return this.baysLayer;
   }
 
   // Update getParkingLots to use caching
@@ -364,29 +464,20 @@ export class MapService {
         )
       );
 
-      const underBaysLayer = new FeatureLayer({
-        url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays_Under/FeatureServer/0",
-        outFields: ['*']
-      });
-
-      const baysLayer = new FeatureLayer({
-        url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays/FeatureServer/0",
-        outFields: ['*']
-      });
-
-      await Promise.all([
-        underBaysLayer.load(),
-        baysLayer.load()
-      ]);
+      // Use the already initialized bay layers
+      if (!this.underBaysLayer || !this.baysLayer) {
+        throw new MapServiceError('Bay layers not initialized');
+      }
 
       const [underBaysFeatures, baysFeatures] = await Promise.all([
-        this.queryAllFeatures(underBaysLayer),
-        this.queryAllFeatures(baysLayer)
+        this.queryAllFeatures(this.underBaysLayer),
+        this.queryAllFeatures(this.baysLayer)
       ]);
 
       // Initialize counts
       const totalCounts: { [key: string]: number } = {};
       const monitoredCounts: { [key: string]: number } = {};
+      const individualBayClosedCounts: { [key: string]: number } = {};
       const parkingLotCounts: { [key: string]: { [key: string]: number } } = {};
 
       // Process all features from both layers
@@ -420,9 +511,15 @@ export class MapService {
         features.forEach(feature => {
           const attributes = feature.attributes as BayFeatureAttributes;
           const bayType = this.cleanString(attributes.baytype || 'Unknown');
+          const bayStatus = this.cleanString(String(attributes.status || 'Open'));
           
           // Update total counts
           totalCounts[bayType] = (totalCounts[bayType] || 0) + 1;
+          
+          // Update individual bay closed counts if bay status is 'Closed'
+          if (bayStatus.toLowerCase() === 'closed') {
+            individualBayClosedCounts[bayType] = (individualBayClosedCounts[bayType] || 0) + 1;
+          }
           
           // Update monitored counts if the parking lot is monitored
           if (isParkingLotMonitored) {
@@ -437,6 +534,7 @@ export class MapService {
       // Cache the counts
       this.cachedTotalCounts = totalCounts;
       this.cachedMonitoredCounts = monitoredCounts;
+      this.cachedIndividualBayClosedCounts = individualBayClosedCounts;
       
       // Convert parking lot counts to BayTypeCount arrays
       Object.entries(parkingLotCounts).forEach(([lot, counts]) => {
@@ -467,6 +565,33 @@ export class MapService {
     }
   }
 
+  async getSelectedParkingLotClosedBays(parkingLot: string): Promise<{ [key: string]: number }> {
+    try {
+      await this.loadAndProcessFeatures();
+      const cleanedParkingLot = this.cleanString(parkingLot);
+      const features = this.cachedFeatures[cleanedParkingLot] || [];
+      
+      const closedBayCounts: { [key: string]: number } = {};
+      
+      features.forEach(feature => {
+        const attributes = feature.attributes as BayFeatureAttributes;
+        const bayType = this.cleanString(attributes.baytype || 'Unknown');
+        const bayStatus = this.cleanString(String(attributes.status || 'Open'));
+        
+        if (bayStatus.toLowerCase() === 'closed') {
+          closedBayCounts[bayType] = (closedBayCounts[bayType] || 0) + 1;
+        }
+      });
+      
+      return closedBayCounts;
+    } catch (error) {
+      throw new MapServiceError(
+        `Failed to get closed bay counts for parking lot ${parkingLot}`,
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+
   async getBayCounts(): Promise<BayTypeCount[]> {
     try {
       await this.loadAndProcessFeatures();
@@ -487,6 +612,10 @@ export class MapService {
 
   getMonitoredBayCounts(): { [key: string]: number } {
     return this.cachedMonitoredCounts;
+  }
+
+  getIndividualBayClosedCounts(): { [key: string]: number } {
+    return this.cachedIndividualBayClosedCounts;
   }
 
   private async ensureFeaturesLoaded(): Promise<void> {

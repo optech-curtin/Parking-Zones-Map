@@ -3,7 +3,7 @@ export interface BayFeatureAttributes {
   OBJECTID: number;
   parkinglot: string;
   baytype: string;
-  [key: string]: string | number; // For other potential attributes
+  [key: string]: string | number; // For other potential attributes including status
 }
 
 export interface ParkingFeatureAttributes {
@@ -32,7 +32,9 @@ export interface ParkingState {
   selectedParkingLot: string;
   highlightedParkingLot: string;
   carparkStatus: { [key: string]: boolean };
-  closedBayCounts: { [key: string]: number };
+  closedBayCounts: { [key: string]: number }; // Manually closed + individual bay status
+  individualBayClosedCounts: { [key: string]: number }; // Individual bay status only
+  selectedClosedBayCounts: { [key: string]: number }; // Individual bay closed counts for selected parking lot
   totalBayCounts: { [key: string]: number };
   monitoredBayCounts: { [key: string]: number };
   bayTypeCounts: BayTypeCount[];
@@ -52,10 +54,12 @@ export interface ParkingContextProps {
   resetAllCarparks: () => void;
   setBayTypeCounts: (counts: BayTypeCount[]) => void;
   setSelectedBayCounts: (counts: BayTypeCount[]) => void;
+  setSelectedClosedBayCounts: (counts: { [key: string]: number }) => void;
   setTotalBayCounts: (counts: { [key: string]: number }) => void;
   setMonitoredBayCounts: (counts: { [key: string]: number }) => void;
-  setMonitoredCarparks: (carparks: string[]) => void;
+  setIndividualBayClosedCounts: (counts: { [key: string]: number }) => void;
   setParkingLots: (lots: string[]) => void;
+  setMonitoredCarparks: (carparks: string[]) => void;
   setIsLoading: (loading: boolean) => void;
   setError: (error: Error | null) => void;
 }
