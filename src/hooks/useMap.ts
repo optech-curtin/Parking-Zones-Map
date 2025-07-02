@@ -22,9 +22,7 @@ export function useMap() {
     state: { 
       highlightedParkingLot,
       carparkStatus,
-      monitoredCarparks,
-      selectedBay,
-      highlightedBay
+      monitoredCarparks
     },
     setSelectedParkingLot,
     setHighlightedParkingLot,
@@ -99,71 +97,7 @@ export function useMap() {
     setError
   ]);
 
-  // Function to highlight a specific bay using graphics overlay
-  const highlightSpecificBay = useCallback(async (objectId: number) => {
-    const view = mapServiceRef.current?.getView();
-    if (!view) return;
 
-    // Remove previous highlight
-    if (bayHighlightGraphicRef.current) {
-      view.graphics.remove(bayHighlightGraphicRef.current);
-      bayHighlightGraphicRef.current = null;
-    }
-
-    try {
-      // Query the specific bay from both layers using OBJECTID
-      const underBaysLayer = mapServiceRef.current?.getUnderBaysLayer();
-      const baysLayer = mapServiceRef.current?.getBaysLayer();
-
-      let bayGraphic: __esri.Graphic | null = null;
-
-      // Try to find the bay in under bays layer first
-      if (underBaysLayer) {
-        const query = underBaysLayer.createQuery();
-        query.where = `OBJECTID = ${objectId}`;
-        query.returnGeometry = true;
-        
-        const result = await underBaysLayer.queryFeatures(query);
-        if (result.features.length > 0) {
-          bayGraphic = result.features[0];
-        }
-      }
-
-      // If not found in under bays, try regular bays layer
-      if (!bayGraphic && baysLayer) {
-        const query = baysLayer.createQuery();
-        query.where = `OBJECTID = ${objectId}`;
-        query.returnGeometry = true;
-        
-        const result = await baysLayer.queryFeatures(query);
-        if (result.features.length > 0) {
-          bayGraphic = result.features[0];
-        }
-      }
-
-      // Create highlight graphic
-      if (bayGraphic && bayGraphic.geometry) {
-        const highlightSymbol = {
-          type: "simple-fill" as const,
-          color: [0, 255, 255, 0.5], // Cyan highlight
-          outline: {
-            color: [0, 255, 255, 1],
-            width: 3
-          }
-        };
-
-        const highlightGraphic = new (await import('@arcgis/core/Graphic')).default({
-          geometry: bayGraphic.geometry,
-          symbol: highlightSymbol
-        });
-
-        view.graphics.add(highlightGraphic);
-        bayHighlightGraphicRef.current = highlightGraphic;
-      }
-    } catch (error) {
-      console.error('Error highlighting bay:', error);
-    }
-  }, []);
 
   // Function to highlight a bay using the graphic's geometry directly (fixes offset issues)
   const highlightBayWithGeometry = useCallback(async (bayGraphic: __esri.Graphic) => {
@@ -527,6 +461,7 @@ export function useMap() {
     return () => {
       isMounted = false;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty dependency array since we're using refs
 
   // Update renderer when carpark status, highlight, or monitored filter changes
