@@ -10,12 +10,14 @@ This project demonstrates a modern Next.js web application that integrates with 
    - Real-time bay type tracking and counting
    - Ability to open/close parking lots with visual indicators (red outline and fill for closed carparks)
    - Right-click functionality for quick parking lot status changes
+   - **Zoom-based interaction**: Click parking lots when zoomed out, click individual bays when zoomed in (zoom level 19+)
    - Comprehensive bay type summary showing:
      - Total counts for each bay type across all carparks
      - Closed bay counts in red brackets
      - Overall totals for all bays and closed bays
    - Dynamic side menu with sliding animations
    - Parking lot controls that slide out from the planning menu
+   - Visual zoom indicator showing when bay interaction is available
 
 2. **Next.js + TypeScript**  
    - Built with Next.js and TypeScript for type safety and modern development practices

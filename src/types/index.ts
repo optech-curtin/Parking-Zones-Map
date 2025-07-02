@@ -31,6 +31,9 @@ export interface ParkingLotCount {
 export interface ParkingState {
   selectedParkingLot: string;
   highlightedParkingLot: string;
+  selectedBay: string | null; // New: selected individual bay
+  highlightedBay: string | null; // New: highlighted individual bay
+  selectedBayAttributes: BayFeatureAttributes | null; // New: store bay attributes for display
   carparkStatus: { [key: string]: boolean };
   closedBayCounts: { [key: string]: number }; // Manually closed + individual bay status
   individualBayClosedCounts: { [key: string]: number }; // Individual bay status only
@@ -50,6 +53,9 @@ export interface ParkingContextProps {
   state: ParkingState;
   setSelectedParkingLot: (lot: string) => void;
   setHighlightedParkingLot: (lot: string) => void;
+  setSelectedBay: (bay: string | null) => void; // New: set selected bay
+  setHighlightedBay: (bay: string | null) => void; // New: set highlighted bay
+  setSelectedBayAttributes: (attributes: BayFeatureAttributes | null) => void; // New: set bay attributes
   toggleCarparkStatus: (lot: string) => void;
   resetAllCarparks: () => void;
   setBayTypeCounts: (counts: BayTypeCount[]) => void;

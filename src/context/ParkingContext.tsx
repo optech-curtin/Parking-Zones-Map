@@ -1,10 +1,13 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { ParkingState, ParkingContextProps, BayTypeCount } from '../types';
+import { ParkingState, ParkingContextProps, BayTypeCount, BayFeatureAttributes } from '../types';
 import { ContextError } from '../utils/errors';
 
 const initialState: ParkingState = {
   selectedParkingLot: '',
   highlightedParkingLot: '',
+  selectedBay: null,
+  highlightedBay: null,
+  selectedBayAttributes: null,
   carparkStatus: {},
   closedBayCounts: {},
   individualBayClosedCounts: {},
@@ -66,6 +69,39 @@ export const ParkingProvider = ({ children }: { children: ReactNode }) => {
       setState(prev => ({ 
         ...prev, 
         error: new ContextError('Failed to set highlighted parking lot', error instanceof Error ? error : undefined)
+      }));
+    }
+  };
+
+  const setSelectedBay = (bay: string | null) => {
+    try {
+      setState(prev => ({ ...prev, selectedBay: bay }));
+    } catch (error) {
+      setState(prev => ({ 
+        ...prev, 
+        error: new ContextError('Failed to set selected bay', error instanceof Error ? error : undefined)
+      }));
+    }
+  };
+
+  const setHighlightedBay = (bay: string | null) => {
+    try {
+      setState(prev => ({ ...prev, highlightedBay: bay }));
+    } catch (error) {
+      setState(prev => ({ 
+        ...prev, 
+        error: new ContextError('Failed to set highlighted bay', error instanceof Error ? error : undefined)
+      }));
+    }
+  };
+
+  const setSelectedBayAttributes = (attributes: BayFeatureAttributes | null) => {
+    try {
+      setState(prev => ({ ...prev, selectedBayAttributes: attributes }));
+    } catch (error) {
+      setState(prev => ({ 
+        ...prev, 
+        error: new ContextError('Failed to set selected bay attributes', error instanceof Error ? error : undefined)
       }));
     }
   };
@@ -236,6 +272,9 @@ export const ParkingProvider = ({ children }: { children: ReactNode }) => {
     state,
     setSelectedParkingLot,
     setHighlightedParkingLot,
+    setSelectedBay,
+    setHighlightedBay,
+    setSelectedBayAttributes,
     toggleCarparkStatus,
     resetAllCarparks,
     setBayTypeCounts,

@@ -2,13 +2,14 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { MapService } from '../services/MapService';
 import { useParking } from '../context/ParkingContext';
 import FeatureLayer from '@arcgis/core/layers/FeatureLayer';
-import type { ParkingFeatureAttributes } from '../types';
+import type { ParkingFeatureAttributes, BayFeatureAttributes } from '../types';
 
 const PARKING_LAYER_URL = "https://arcgis.curtin.edu.au/arcgis/rest/services/ParKam/ParKam/FeatureServer/4";
 
 export function useMap() {
   const mapDivRef = useRef<HTMLDivElement>(null);
   const mapServiceRef = useRef<MapService | null>(null);
+  const bayHighlightGraphicRef = useRef<__esri.Graphic | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isZoneInfoMinimized, setIsZoneInfoMinimized] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -21,10 +22,15 @@ export function useMap() {
     state: { 
       highlightedParkingLot,
       carparkStatus,
-      monitoredCarparks
+      monitoredCarparks,
+      selectedBay,
+      highlightedBay
     },
     setSelectedParkingLot,
     setHighlightedParkingLot,
+    setSelectedBay,
+    setHighlightedBay,
+    setSelectedBayAttributes,
     setBayTypeCounts,
     setParkingLots,
     setMonitoredCarparks,
@@ -41,6 +47,9 @@ export function useMap() {
   const stateSettersRef = useRef({
     setSelectedParkingLot,
     setHighlightedParkingLot,
+    setSelectedBay,
+    setHighlightedBay,
+    setSelectedBayAttributes,
     setBayTypeCounts,
     setParkingLots,
     setMonitoredCarparks,
@@ -58,6 +67,9 @@ export function useMap() {
     stateSettersRef.current = {
       setSelectedParkingLot,
       setHighlightedParkingLot,
+      setSelectedBay,
+      setHighlightedBay,
+      setSelectedBayAttributes,
       setBayTypeCounts,
       setParkingLots,
       setMonitoredCarparks,
@@ -72,6 +84,9 @@ export function useMap() {
   }, [
     setSelectedParkingLot,
     setHighlightedParkingLot,
+    setSelectedBay,
+    setHighlightedBay,
+    setSelectedBayAttributes,
     setBayTypeCounts,
     setParkingLots,
     setMonitoredCarparks,
@@ -83,6 +98,107 @@ export function useMap() {
     setIndividualBayClosedCounts,
     setError
   ]);
+
+  // Function to highlight a specific bay using graphics overlay
+  const highlightSpecificBay = useCallback(async (objectId: number) => {
+    const view = mapServiceRef.current?.getView();
+    if (!view) return;
+
+    // Remove previous highlight
+    if (bayHighlightGraphicRef.current) {
+      view.graphics.remove(bayHighlightGraphicRef.current);
+      bayHighlightGraphicRef.current = null;
+    }
+
+    try {
+      // Query the specific bay from both layers using OBJECTID
+      const underBaysLayer = mapServiceRef.current?.getUnderBaysLayer();
+      const baysLayer = mapServiceRef.current?.getBaysLayer();
+
+      let bayGraphic: __esri.Graphic | null = null;
+
+      // Try to find the bay in under bays layer first
+      if (underBaysLayer) {
+        const query = underBaysLayer.createQuery();
+        query.where = `OBJECTID = ${objectId}`;
+        query.returnGeometry = true;
+        
+        const result = await underBaysLayer.queryFeatures(query);
+        if (result.features.length > 0) {
+          bayGraphic = result.features[0];
+        }
+      }
+
+      // If not found in under bays, try regular bays layer
+      if (!bayGraphic && baysLayer) {
+        const query = baysLayer.createQuery();
+        query.where = `OBJECTID = ${objectId}`;
+        query.returnGeometry = true;
+        
+        const result = await baysLayer.queryFeatures(query);
+        if (result.features.length > 0) {
+          bayGraphic = result.features[0];
+        }
+      }
+
+      // Create highlight graphic
+      if (bayGraphic && bayGraphic.geometry) {
+        const highlightSymbol = {
+          type: "simple-fill" as const,
+          color: [0, 255, 255, 0.5], // Cyan highlight
+          outline: {
+            color: [0, 255, 255, 1],
+            width: 3
+          }
+        };
+
+        const highlightGraphic = new (await import('@arcgis/core/Graphic')).default({
+          geometry: bayGraphic.geometry,
+          symbol: highlightSymbol
+        });
+
+        view.graphics.add(highlightGraphic);
+        bayHighlightGraphicRef.current = highlightGraphic;
+      }
+    } catch (error) {
+      console.error('Error highlighting bay:', error);
+    }
+  }, []);
+
+  // Function to highlight a bay using the graphic's geometry directly (fixes offset issues)
+  const highlightBayWithGeometry = useCallback(async (bayGraphic: __esri.Graphic) => {
+    const view = mapServiceRef.current?.getView();
+    if (!view || !bayGraphic.geometry) return;
+
+    // Remove previous highlight
+    if (bayHighlightGraphicRef.current) {
+      view.graphics.remove(bayHighlightGraphicRef.current);
+      bayHighlightGraphicRef.current = null;
+    }
+
+    try {
+      const highlightSymbol = {
+        type: "simple-fill" as const,
+        color: [0, 255, 255, 0.5], // Cyan highlight
+        outline: {
+          color: [0, 255, 255, 1],
+          width: 3
+        }
+      };
+
+      const highlightGraphic = new (await import('@arcgis/core/Graphic')).default({
+        geometry: bayGraphic.geometry,
+        symbol: highlightSymbol
+      });
+
+              view.graphics.add(highlightGraphic);
+        bayHighlightGraphicRef.current = highlightGraphic;
+      } catch (error) {
+        console.error('Error highlighting bay with geometry:', error);
+      }
+  }, []);
+
+
 
   const handleSelectParkingLot = useCallback(async (parkingLot: string, shouldZoom: boolean = false) => {
     const cleanedParkingLot = mapServiceRef.current?.cleanString(parkingLot);
@@ -183,22 +299,18 @@ export function useMap() {
           );
         }
 
-        console.log('Initializing map service...');
         // Initialize map service
         const mapService = new MapService();
         mapServiceRef.current = mapService;
 
-        console.log('Initializing map...');
         // Initialize the map
         await mapService.initializeMap(mapDivRef.current);
 
-        console.log('Loading and processing features...');
         // Load and process features
         await mapService.loadAndProcessFeatures();
 
         if (!isMounted) return;
 
-        console.log('Getting required data...');
         // Get all required data
         const [lots, monitoredCarparks, bayCounts] = await Promise.all([
           mapService.getParkingLots(),
@@ -208,7 +320,6 @@ export function useMap() {
 
         if (!isMounted) return;
 
-        console.log('Updating state...');
         // Update all state in a single batch
         setParkingLots(lots);
         setMonitoredCarparks(monitoredCarparks);
@@ -217,48 +328,178 @@ export function useMap() {
         setMonitoredBayCounts(mapService.getMonitoredBayCounts());
         setIndividualBayClosedCounts(mapService.getIndividualBayClosedCounts());
 
-        console.log('Setting up click handler...');
-        // Set up click handler
+        // Set up click handler with zoom-based layer detection
+        // Set up click handler with zoom-based layer detection
         const view = mapService.getView();
         if (view) {
           view.on('click', async (event) => {
             try {
               const parkingLayer = mapService.getParkingLayer();
+              const underBaysLayer = mapService.getUnderBaysLayer();
+              const baysLayer = mapService.getBaysLayer();
+              
               if (!parkingLayer) {
                 console.error('Parking layer not available for click handling');
                 return;
               }
 
               const response = await view.hitTest(event);
-              const parkingFeature = response.results.find(
-                (result) => 'graphic' in result && result.graphic?.layer === parkingLayer
-              );
+              
+              // Define zoom threshold for bay interaction (adjust as needed)
+              const BAY_INTERACTION_ZOOM = 19; // Temporarily lowered for testing
+              
+              if (view.zoom >= BAY_INTERACTION_ZOOM) {
+                // At high zoom levels, prioritize bay layers
+                const bayFeature = response.results.find(
+                  (result) => 'graphic' in result && 
+                  (result.graphic?.layer === underBaysLayer || result.graphic?.layer === baysLayer)
+                );
 
-              if (parkingFeature && 'graphic' in parkingFeature) {
-                const attributes = parkingFeature.graphic.attributes as ParkingFeatureAttributes;
-                const parkingLot = mapService.cleanString(attributes.Zone || 'Unknown');
-                if (parkingLot) {
-                  setSelectedParkingLot(parkingLot);
-                  setHighlightedParkingLot(parkingLot);
+                if (bayFeature && 'graphic' in bayFeature) {
+                  const attributes = bayFeature.graphic.attributes as BayFeatureAttributes;
                   
-                  const [selectedBays, selectedClosedBays] = await Promise.all([
-                    mapService.getSelectedParkingLotBays(parkingLot),
-                    mapService.getSelectedParkingLotClosedBays(parkingLot)
-                  ]);
-                  
-                  if (selectedBays) {
-                    setSelectedBayCounts(selectedBays);
+                  // Validate attributes before processing
+                  if (!attributes.objectid) {
+                    console.error('Missing objectid in bay attributes:', attributes);
+                    return;
                   }
                   
-                  if (selectedClosedBays) {
-                    setSelectedClosedBayCounts(selectedClosedBays);
+                  // Create a bay ID for display purposes
+                  const bayId = `${attributes.parkinglot || 'Unknown'}_${attributes.baytype || 'Unknown'}_${attributes.objectid}`;
+                  
+                  // Set selected and highlighted bay
+                  setSelectedBay(bayId);
+                  setHighlightedBay(bayId);
+                  
+                  // Store bay attributes for display
+                  setSelectedBayAttributes(attributes);
+                  
+                  // Highlight the specific bay using the clicked graphic's geometry directly
+                  await highlightBayWithGeometry(bayFeature.graphic);
+                  
+                  // Clear parking lot highlight since we're highlighting a bay instead
+                  setHighlightedParkingLot('');
+                  
+                  // Set the parking lot context but DON'T highlight the parking lot
+                  const parkingLot = mapService.cleanString(attributes.parkinglot || 'Unknown');
+                  if (parkingLot) {
+                    setSelectedParkingLot(parkingLot);
+                    // Don't set highlightedParkingLot - we want to highlight only the bay
+                    
+                    const [selectedBays, selectedClosedBays] = await Promise.all([
+                      mapService.getSelectedParkingLotBays(parkingLot),
+                      mapService.getSelectedParkingLotClosedBays(parkingLot)
+                    ]);
+                    
+                    if (selectedBays) {
+                      setSelectedBayCounts(selectedBays);
+                    }
+                    
+                    if (selectedClosedBays) {
+                      setSelectedClosedBayCounts(selectedClosedBays);
+                    }
+                  }
+                } else {
+                  // No bay clicked, clear bay selection but keep parking lot if clicked
+                  setSelectedBay(null);
+                  setHighlightedBay(null);
+                  setSelectedBayAttributes(null);
+                  
+                  // Remove bay highlight
+                  if (bayHighlightGraphicRef.current) {
+                    const view = mapServiceRef.current?.getView();
+                    if (view) {
+                      view.graphics.remove(bayHighlightGraphicRef.current);
+                      bayHighlightGraphicRef.current = null;
+                    }
+                  }
+                  
+                  // Check if parking lot was clicked
+                  const parkingFeature = response.results.find(
+                    (result) => 'graphic' in result && result.graphic?.layer === parkingLayer
+                  );
+
+                  if (parkingFeature && 'graphic' in parkingFeature) {
+                    const attributes = parkingFeature.graphic.attributes as ParkingFeatureAttributes;
+                    const parkingLot = mapService.cleanString(attributes.Zone || 'Unknown');
+                    if (parkingLot) {
+                      setSelectedParkingLot(parkingLot);
+                      setHighlightedParkingLot(parkingLot); // Only highlight parking lot if directly clicked
+                      
+                      const [selectedBays, selectedClosedBays] = await Promise.all([
+                        mapService.getSelectedParkingLotBays(parkingLot),
+                        mapService.getSelectedParkingLotClosedBays(parkingLot)
+                      ]);
+                      
+                      if (selectedBays) {
+                        setSelectedBayCounts(selectedBays);
+                      }
+                      
+                      if (selectedClosedBays) {
+                        setSelectedClosedBayCounts(selectedClosedBays);
+                      }
+                    }
+                  } else {
+                    // Clear everything if nothing was clicked
+                    setSelectedParkingLot('');
+                    setHighlightedParkingLot('');
+                    setSelectedBayCounts([]);
+                    setSelectedClosedBayCounts({});
                   }
                 }
               } else {
-                setSelectedParkingLot('');
-                setHighlightedParkingLot('');
-                setSelectedBayCounts([]);
-                setSelectedClosedBayCounts({});
+                // At low zoom levels, only interact with parking lots
+                // Filter out bay features completely at low zoom
+                const nonBayResults = response.results.filter(
+                  (result) => 'graphic' in result && 
+                  result.graphic?.layer !== underBaysLayer && 
+                  result.graphic?.layer !== baysLayer
+                );
+                
+                const parkingFeature = nonBayResults.find(
+                  (result) => 'graphic' in result && result.graphic?.layer === parkingLayer
+                );
+
+                if (parkingFeature && 'graphic' in parkingFeature) {
+                  const attributes = parkingFeature.graphic.attributes as ParkingFeatureAttributes;
+                  const parkingLot = mapService.cleanString(attributes.Zone || 'Unknown');
+                  if (parkingLot) {
+                    setSelectedParkingLot(parkingLot);
+                    setHighlightedParkingLot(parkingLot);
+                    
+                    const [selectedBays, selectedClosedBays] = await Promise.all([
+                      mapService.getSelectedParkingLotBays(parkingLot),
+                      mapService.getSelectedParkingLotClosedBays(parkingLot)
+                    ]);
+                    
+                    if (selectedBays) {
+                      setSelectedBayCounts(selectedBays);
+                    }
+                    
+                    if (selectedClosedBays) {
+                      setSelectedClosedBayCounts(selectedClosedBays);
+                    }
+                  }
+                } else {
+                  setSelectedParkingLot('');
+                  setHighlightedParkingLot('');
+                  setSelectedBayCounts([]);
+                  setSelectedClosedBayCounts({});
+                }
+                
+                // Clear bay selection at low zoom
+                setSelectedBay(null);
+                setHighlightedBay(null);
+                setSelectedBayAttributes(null);
+                
+                // Remove bay highlight
+                if (bayHighlightGraphicRef.current) {
+                  const view = mapServiceRef.current?.getView();
+                  if (view) {
+                    view.graphics.remove(bayHighlightGraphicRef.current);
+                    bayHighlightGraphicRef.current = null;
+                  }
+                }
               }
             } catch (error) {
               console.error('Error handling map click:', error);
@@ -373,6 +614,53 @@ export function useMap() {
 
     updateRenderer();
   }, [carparkStatus, highlightedParkingLot, monitoredCarparks, filters.monitoredCarparks]);
+
+  // Initialize bay renderers once (no longer need to update based on selection)
+  useEffect(() => {
+    const underBaysLayer = mapServiceRef.current?.getUnderBaysLayer();
+    const baysLayer = mapServiceRef.current?.getBaysLayer();
+    
+    if (!underBaysLayer || !baysLayer) return;
+
+    const initializeBayRenderers = () => {
+      try {
+        // Create a simple renderer for status-based coloring
+        const bayRenderer = {
+          type: "unique-value" as const,
+          field: "status",
+          uniqueValueInfos: [
+            {
+              value: "Closed",
+              symbol: {
+                type: "simple-fill" as const,
+                color: [255, 0, 0, 0.7], // Red overlay for closed bays
+                outline: {
+                  color: [255, 0, 0, 1],
+                  width: 2
+                }
+              }
+            }
+          ],
+          defaultSymbol: {
+            type: "simple-fill" as const,
+            color: [0, 0, 0, 0], // Transparent for open bays
+            outline: {
+              color: [128, 128, 128, 0.3],
+              width: 0.5
+            }
+          }
+        };
+
+        // Set renderers for both bay layers
+        underBaysLayer.renderer = bayRenderer;
+        baysLayer.renderer = bayRenderer;
+      } catch (error) {
+        console.error('Error initializing bay renderers:', error);
+      }
+    };
+
+    initializeBayRenderers();
+  }, []); // Only run once on initialization
 
   return {
     mapDivRef,

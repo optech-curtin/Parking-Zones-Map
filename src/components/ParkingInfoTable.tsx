@@ -6,7 +6,7 @@ import { ComponentError } from '../utils/errors';
 export default function ParkingInfoTable() {
   const [isMinimized, setIsMinimized] = React.useState(false);
   const { state } = useParking();
-  const { selectedParkingLot, selectedBayCounts, selectedClosedBayCounts, isLoading, bayColors, error } = state;
+  const { selectedParkingLot, selectedBay, selectedBayAttributes, selectedBayCounts, selectedClosedBayCounts, isLoading, bayColors, error } = state;
 
   const cleanBayType = (type: string): string => {
     try {
@@ -63,14 +63,42 @@ export default function ParkingInfoTable() {
                   />
                 </svg>
               </button>
-              <h2 className="text-sm font-medium ml-2">Parking Lot Information</h2>
+              <h2 className="text-sm font-medium ml-2">
+                {selectedBay ? 'Bay Information' : 'Parking Lot Information'}
+              </h2>
             </div>
           </div>
           <div className={`transition-all duration-300 ease-in-out ${
             isMinimized ? 'max-h-0' : 'max-h-[80vh]'
           }`}>
             <div className="p-4 overflow-y-auto max-h-[calc(80vh-3rem)]">
-              {selectedParkingLot ? (
+              {selectedBay ? (
+                <>
+                  <h3 className="text-lg font-semibold mb-4">Selected Bay</h3>
+                  <div className="space-y-2">
+                    {selectedBayAttributes && (
+                      <>
+                        <div className="bg-gray-50 p-3 rounded-lg">
+                          <p className="text-sm text-gray-600 mb-2">Zone:</p>
+                          <div className="flex items-center space-x-2">
+                            <div 
+                              className="w-4 h-4 rounded-full border border-gray-300"
+                              style={{ backgroundColor: bayColors[selectedBayAttributes.baytype] || '#9E9E9E' }}
+                              role="img"
+                              aria-label={`${selectedBayAttributes.baytype} bay type indicator`}
+                            />
+                            <span className="font-medium">{selectedBayAttributes.baytype || 'Unknown'}</span>
+                          </div>
+                        </div>
+                        <div className="bg-gray-50 p-3 rounded-lg">
+                          <p className="text-sm text-gray-600">Parking Lot:</p>
+                          <p className="font-medium">{selectedBayAttributes.parkinglot || 'Unknown'}</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </>
+              ) : selectedParkingLot ? (
                 <>
                   <h3 className="text-lg font-semibold mb-4">{selectedParkingLot}</h3>
                   {isLoading ? (
@@ -114,6 +142,9 @@ export default function ParkingInfoTable() {
                             </span>
                           </div>
                         )}
+                      </div>
+                      <div className="text-sm text-gray-500 mt-4 p-3 bg-blue-50 rounded-lg">
+                        <p>Zoom in to see individual bays. Click on a bay to select it.</p>
                       </div>
                     </div>
                   )}
