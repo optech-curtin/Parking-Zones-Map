@@ -283,7 +283,7 @@ export function useMap() {
               const BAY_INTERACTION_ZOOM = 19; // Temporarily lowered for testing
               
               if (view.zoom >= BAY_INTERACTION_ZOOM) {
-                // At high zoom levels, prioritize bay layers
+                // At high zoom levels, ONLY interact with bay layers
                 const bayFeature = response.results.find(
                   (result) => 'graphic' in result && 
                   (result.graphic?.layer === underBaysLayer || result.graphic?.layer === baysLayer)
@@ -334,10 +334,15 @@ export function useMap() {
                     }
                   }
                 } else {
-                  // No bay clicked, clear bay selection but keep parking lot if clicked
+                  // At high zoom, if no bay was clicked, clear everything
+                  // Do NOT fall back to parking lot selection at high zoom
                   setSelectedBay(null);
                   setHighlightedBay(null);
                   setSelectedBayAttributes(null);
+                  setSelectedParkingLot('');
+                  setHighlightedParkingLot('');
+                  setSelectedBayCounts([]);
+                  setSelectedClosedBayCounts({});
                   
                   // Remove bay highlight
                   if (bayHighlightGraphicRef.current) {
@@ -346,39 +351,6 @@ export function useMap() {
                       view.graphics.remove(bayHighlightGraphicRef.current);
                       bayHighlightGraphicRef.current = null;
                     }
-                  }
-                  
-                  // Check if parking lot was clicked
-                  const parkingFeature = response.results.find(
-                    (result) => 'graphic' in result && result.graphic?.layer === parkingLayer
-                  );
-
-                  if (parkingFeature && 'graphic' in parkingFeature) {
-                    const attributes = parkingFeature.graphic.attributes as ParkingFeatureAttributes;
-                    const parkingLot = mapService.cleanString(attributes.Zone || 'Unknown');
-                    if (parkingLot) {
-                      setSelectedParkingLot(parkingLot);
-                      setHighlightedParkingLot(parkingLot); // Only highlight parking lot if directly clicked
-                      
-                      const [selectedBays, selectedClosedBays] = await Promise.all([
-                        mapService.getSelectedParkingLotBays(parkingLot),
-                        mapService.getSelectedParkingLotClosedBays(parkingLot)
-                      ]);
-                      
-                      if (selectedBays) {
-                        setSelectedBayCounts(selectedBays);
-                      }
-                      
-                      if (selectedClosedBays) {
-                        setSelectedClosedBayCounts(selectedClosedBays);
-                      }
-                    }
-                  } else {
-                    // Clear everything if nothing was clicked
-                    setSelectedParkingLot('');
-                    setHighlightedParkingLot('');
-                    setSelectedBayCounts([]);
-                    setSelectedClosedBayCounts({});
                   }
                 }
               } else {

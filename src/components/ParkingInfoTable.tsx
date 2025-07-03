@@ -78,8 +78,8 @@ export default function ParkingInfoTable() {
                   <div className="space-y-2">
                     {selectedBayAttributes && (
                       <>
-                        <div className="bg-gray-50 p-3 rounded-lg">
-                          <p className="text-sm text-gray-600 mb-2">Zone:</p>
+                        <div className="flex justify-between items-center">
+                          <span>Zone</span>
                           <div className="flex items-center space-x-2">
                             <div 
                               className="w-4 h-4 rounded-full border border-gray-300"
@@ -90,9 +90,9 @@ export default function ParkingInfoTable() {
                             <span className="font-medium">{selectedBayAttributes.baytype || 'Unknown'}</span>
                           </div>
                         </div>
-                        <div className="bg-gray-50 p-3 rounded-lg">
-                          <p className="text-sm text-gray-600">Parking Lot:</p>
-                          <p className="font-medium">{selectedBayAttributes.parkinglot || 'Unknown'}</p>
+                        <div className="flex justify-between items-center">
+                          <span>Parking Lot</span>
+                          <span className="font-medium">{selectedBayAttributes.parkinglot || 'Unknown'}</span>
                         </div>
                       </>
                     )}

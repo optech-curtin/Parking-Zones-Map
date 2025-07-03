@@ -50,7 +50,12 @@ export default function SideMenu({
 
   // Get closed bays for filtered parking lots
   const filteredClosedBayCounts = React.useMemo(() => {
-    let filteredCounts: { [key: string]: number } = {};
+    const filteredCounts: { [key: string]: number } = {};
+    
+    // Always include individual bay closed counts (bays with status "Closed")
+    Object.entries(closedBayCounts).forEach(([type, count]) => {
+      filteredCounts[type] = (filteredCounts[type] || 0) + count;
+    });
     
     if (filters.monitoredCarparks) {
       // Only include closed bays from monitored carparks
@@ -63,8 +68,15 @@ export default function SideMenu({
           });
         });
     } else {
-      // Use all closed bay counts
-      filteredCounts = { ...closedBayCounts };
+      // Include closed bays from all parking lots that are manually closed
+      Object.entries(carparkStatus)
+        .filter(([, isClosed]) => isClosed)
+        .forEach(() => {
+          // Add the closed bays for this parking lot
+          Object.entries(closedBayCounts).forEach(([type, count]) => {
+            filteredCounts[type] = (filteredCounts[type] || 0) + count;
+          });
+        });
     }
     
     // Apply PAYG filter if active
@@ -105,7 +117,7 @@ export default function SideMenu({
     <>
       {/* Main Parking Planning Menu */}
       <div className="fixed left-[50px] top-0 z-30">
-        <div className="bg-white shadow-lg rounded-lg overflow-hidden mt-4 ml-4 w-64 min-h-0 max-h-[calc(100vh-2rem)] flex flex-col">
+        <div className="bg-white shadow-lg rounded-lg overflow-hidden mt-4 ml-4 w-80 min-h-0 max-h-[calc(100vh-2rem)] flex flex-col">
           <div className="flex items-center justify-between p-2 bg-gray-100 h-12 rounded-t-lg flex-shrink-0">
             <div className="flex items-center">
               <button
@@ -228,9 +240,9 @@ export default function SideMenu({
 
       {/* Filter Menu */}
       <div className={`fixed left-[50px] top-0 z-20 transition-all duration-300 ease-in-out ${
-        isFilterOpen ? 'translate-x-[calc(16rem+1rem)]' : 'translate-x-0'
+        isFilterOpen ? 'translate-x-[calc(20rem+1.5rem)]' : 'translate-x-0'
       }`}>
-        <div className="bg-white shadow-lg rounded-lg overflow-hidden mt-4 ml-4 w-64 min-h-0 max-h-[calc(100vh-2rem)] flex flex-col">
+        <div className="bg-white shadow-lg rounded-lg overflow-hidden mt-4 ml-4 w-56 min-h-0 max-h-[calc(100vh-2rem)] flex flex-col">
           <div className="flex items-center p-2 bg-gray-100 h-12 flex-shrink-0">
             <h2 className="text-sm font-medium">Filter Options</h2>
           </div>
@@ -265,7 +277,7 @@ export default function SideMenu({
 
       {/* Parking Lot Controls Menu */}
       <div className={`fixed left-[50px] top-0 transition-all duration-300 ease-in-out ${
-        isOpen ? (isFilterOpen ? 'translate-x-[calc(32rem+2rem)]' : 'translate-x-[calc(16rem+1rem)]') : 'translate-x-0'
+        isOpen ? (isFilterOpen ? 'translate-x-[calc(35rem+1.5rem)]' : 'translate-x-[calc(20rem+1.5rem)]') : 'translate-x-0'
       } ${isOpen ? 'z-30' : 'z-0 pointer-events-none'}`}>
         <div className="bg-white shadow-lg rounded-lg overflow-hidden mt-4 ml-4 w-64 min-h-0 max-h-[calc(100vh-2rem)] flex flex-col">
           <div className="flex items-center p-2 bg-gray-100 h-12 flex-shrink-0">

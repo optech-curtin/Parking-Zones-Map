@@ -114,21 +114,21 @@ export default function SearchMenu({
   const getLeftPosition = () => {
     // When both parking lot controls and filter are open, move furthest right
     if (isMenuOpen && isFilterOpen) {
-      return 'translate-x-[calc(48rem+3rem)]';
+      return 'translate-x-[calc(51rem+2.5rem)]';
     }
     
     // When only parking lot controls are open
     if (isMenuOpen) {
-      return 'translate-x-[calc(32rem+2rem)]';
+      return 'translate-x-[calc(37rem+1.5rem)]';
     }
     
-    // When only filter is open
+    // When only filter is open - position after filter menu
     if (isFilterOpen) {
-      return 'translate-x-[calc(32rem+2rem)]';
+      return 'translate-x-[calc(35rem+1.5rem)]';
     }
     
     // Default position (next to zone info)
-    return 'translate-x-[calc(16rem+1rem)]';
+    return 'translate-x-[calc(20rem+1.5rem)]';
   };
 
   // Handle click outside to close dropdown
