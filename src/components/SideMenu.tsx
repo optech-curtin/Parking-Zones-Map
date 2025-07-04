@@ -50,34 +50,9 @@ export default function SideMenu({
 
   // Get closed bays for filtered parking lots
   const filteredClosedBayCounts = React.useMemo(() => {
-    const filteredCounts: { [key: string]: number } = {};
-    
-    // Always include individual bay closed counts (bays with status "Closed")
-    Object.entries(closedBayCounts).forEach(([type, count]) => {
-      filteredCounts[type] = (filteredCounts[type] || 0) + count;
-    });
-    
-    if (filters.monitoredCarparks) {
-      // Only include closed bays from monitored carparks
-      Object.entries(carparkStatus)
-        .filter(([parkingLot]) => monitoredCarparks.includes(parkingLot) && carparkStatus[parkingLot])
-        .forEach(() => {
-          // Add the closed bays for this parking lot
-          Object.entries(closedBayCounts).forEach(([type, count]) => {
-            filteredCounts[type] = (filteredCounts[type] || 0) + count;
-          });
-        });
-    } else {
-      // Include closed bays from all parking lots that are manually closed
-      Object.entries(carparkStatus)
-        .filter(([, isClosed]) => isClosed)
-        .forEach(() => {
-          // Add the closed bays for this parking lot
-          Object.entries(closedBayCounts).forEach(([type, count]) => {
-            filteredCounts[type] = (filteredCounts[type] || 0) + count;
-          });
-        });
-    }
+    // closedBayCounts already includes both individual bay closed counts and manually closed parking lot counts
+    // So we can use it directly without additional processing
+    let filteredCounts = { ...closedBayCounts };
     
     // Apply PAYG filter if active
     if (filters.paygZones) {
@@ -94,7 +69,7 @@ export default function SideMenu({
     }
     
     return filteredCounts;
-  }, [closedBayCounts, carparkStatus, monitoredCarparks, filters.monitoredCarparks, filters.paygZones]);
+  }, [closedBayCounts, filters.paygZones]);
 
   const filteredBayTypes = React.useMemo(() => {
     // Use monitoredBayCounts if the monitoredCarparks filter is active, otherwise use totalBayCounts
