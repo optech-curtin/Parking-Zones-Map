@@ -31,7 +31,6 @@ export default function SideMenu({
       closedBayCounts, 
       totalBayCounts,
       monitoredBayCounts,
-      monitoredCarparks,
       bayColors, 
       isLoading 
     },
@@ -52,7 +51,7 @@ export default function SideMenu({
   const filteredClosedBayCounts = React.useMemo(() => {
     // closedBayCounts already includes both individual bay closed counts and manually closed parking lot counts
     // So we can use it directly without additional processing
-    let filteredCounts = { ...closedBayCounts };
+    const filteredCounts = { ...closedBayCounts };
     
     // Apply PAYG filter if active
     if (filters.paygZones) {
