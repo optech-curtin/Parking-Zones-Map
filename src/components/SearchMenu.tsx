@@ -146,8 +146,8 @@ export default function SearchMenu({
 
   return (
     <div className={`fixed left-[50px] top-0 z-25 transition-all duration-300 ease-in-out ${getLeftPosition()}`}>
-      <div className="bg-white shadow-lg rounded-lg overflow-hidden mt-4 ml-4 w-64 min-h-0 max-h-[calc(100vh-2rem)] flex flex-col">
-        <div className="flex items-center p-2 bg-gray-100 h-12 rounded-t-lg flex-shrink-0">
+      <div className="bg-[var(--menu-body-bg)] border border-[var(--card-border)] shadow-[var(--shadow)] rounded-lg overflow-hidden mt-4 ml-4 w-64 min-h-0 max-h-[calc(100vh-2rem)] flex flex-col transition-all duration-300">
+        <div className="flex items-center p-2 bg-[var(--menu-header-bg)] h-12 rounded-t-lg flex-shrink-0">
           <div className="relative flex-1">
             <input
               ref={searchInputRef}
@@ -156,10 +156,10 @@ export default function SearchMenu({
               onChange={handleSearchChange}
               onFocus={() => setIsFocused(true)}
               onKeyDown={handleKeyDown}
-              className="w-full p-1 pl-8 pr-8 bg-transparent border-none focus:outline-none text-sm"
+              className="w-full p-1 pl-8 pr-8 bg-transparent border-none focus:outline-none text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]"
             />
             <svg
-              className="w-4 h-4 absolute left-0 top-1/2 -translate-y-1/2 text-gray-400"
+              className="w-4 h-4 absolute left-0 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -174,10 +174,10 @@ export default function SearchMenu({
             {searchQuery && (
               <button
                 onClick={handleClear}
-                className="absolute right-0 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-gray-200 transition-colors"
+                className="absolute right-0 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-[var(--menu-hover)] transition-colors"
               >
                 <svg
-                  className="w-4 h-4 text-gray-400"
+                  className="w-4 h-4 text-[var(--text-muted)]"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -194,7 +194,7 @@ export default function SearchMenu({
           </div>
         </div>
         {searchQuery && (
-          <div className="overflow-y-auto max-h-[calc(100vh-6rem)]">
+          <div className="overflow-y-auto max-h-[calc(100vh-6rem)] bg-[var(--menu-body-bg)]">
             <div className="p-2">
               <div className="space-y-1" ref={listRef}>
                 {filteredParkingLots.map((lot, index) => (
@@ -205,17 +205,17 @@ export default function SearchMenu({
                       setIsFocused(false);
                       setHighlightedIndex(-1);
                     }}
-                    className={`w-full text-left px-3 py-2 rounded transition-colors text-sm ${
+                    className={`w-full text-left px-3 py-2 rounded transition-colors text-sm text-[var(--text-primary)] ${
                       index === highlightedIndex 
-                        ? 'bg-blue-100 hover:bg-blue-200' 
-                        : 'hover:bg-gray-100'
+                        ? 'bg-[var(--accent-blue)] bg-opacity-20 hover:bg-opacity-30' 
+                        : 'hover:bg-[var(--menu-hover)]'
                     }`}
                   >
                     {lot}
                   </button>
                 ))}
                 {filteredParkingLots.length === 0 && (
-                  <div className="text-center text-gray-500 py-4 text-sm">
+                  <div className="text-center text-[var(--text-muted)] py-4 text-sm">
                     No parking lots found
                   </div>
                 )}

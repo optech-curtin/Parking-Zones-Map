@@ -10,12 +10,12 @@ const ToolPanel: React.FC = () => {
   const buttonClasses = (tool: ToolType) => {
     const baseClasses = 'px-4 py-2 rounded-md text-white focus:outline-none transition-colors';
     return selectedTool === tool
-      ? `${baseClasses} bg-blue-600`
-      : `${baseClasses} bg-gray-500 hover:bg-gray-600`;
+      ? `${baseClasses} bg-[var(--accent-blue)]`
+      : `${baseClasses} bg-[var(--text-muted)] hover:bg-[var(--text-secondary)]`;
   };
 
   return (
-    <div className="flex space-x-4 p-4 bg-gray-100 shadow-md">
+    <div className="flex space-x-4 p-4 bg-[var(--menu-header-bg)] shadow-[var(--shadow)] border border-[var(--card-border)] rounded-lg">
       <button className={buttonClasses('close')} onClick={() => setSelectedTool('close')}>
         Close Carpark
       </button>

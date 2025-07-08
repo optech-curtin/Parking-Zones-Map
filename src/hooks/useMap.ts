@@ -113,9 +113,9 @@ export function useMap() {
     try {
       const highlightSymbol = {
         type: "simple-fill" as const,
-        color: [0, 255, 255, 0.5], // Cyan highlight
+        color: [0, 255, 255, 0.3], // Cyan highlight - same as parking lot selection
         outline: {
-          color: [0, 255, 255, 1],
+          color: [0, 255, 255, 1], // Solid cyan outline - same as parking lot selection
           width: 3
         }
       };
@@ -125,11 +125,11 @@ export function useMap() {
         symbol: highlightSymbol
       });
 
-              view.graphics.add(highlightGraphic);
-        bayHighlightGraphicRef.current = highlightGraphic;
-      } catch (error) {
-        console.error('Error highlighting bay with geometry:', error);
-      }
+      view.graphics.add(highlightGraphic);
+      bayHighlightGraphicRef.current = highlightGraphic;
+    } catch (error) {
+      console.error('Error highlighting bay with geometry:', error);
+    }
   }, []);
 
 
@@ -281,6 +281,9 @@ export function useMap() {
               
               // Define zoom threshold for bay interaction (adjust as needed)
               const BAY_INTERACTION_ZOOM = 19; // Temporarily lowered for testing
+              
+              console.log('Current zoom level:', view.zoom, 'Threshold:', BAY_INTERACTION_ZOOM);
+              console.log('Hit test results:', response.results.length);
               
               if (view.zoom >= BAY_INTERACTION_ZOOM) {
                 // At high zoom levels, ONLY interact with bay layers
