@@ -14,6 +14,14 @@ export class MapError extends AppError {
   }
 }
 
+// Error class for map service errors
+export class MapServiceError extends MapError {
+  constructor(message: string, public readonly cause?: Error) {
+    super(message);
+    this.name = 'MapServiceError';
+  }
+}
+
 // Error class for feature query errors
 export class FeatureQueryError extends MapError {
   constructor(message: string) {
@@ -24,7 +32,7 @@ export class FeatureQueryError extends MapError {
 
 // Error class for layer initialization errors
 export class LayerInitializationError extends MapError {
-  constructor(message: string) {
+  constructor(message: string, public readonly layerId: string, public readonly cause?: Error) {
     super(message);
     this.name = 'LayerInitializationError';
   }

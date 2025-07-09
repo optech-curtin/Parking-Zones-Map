@@ -64,6 +64,7 @@ export interface ParkingContextProps {
   setTotalBayCounts: (counts: { [key: string]: number }) => void;
   setMonitoredBayCounts: (counts: { [key: string]: number }) => void;
   setIndividualBayClosedCounts: (counts: { [key: string]: number }) => void;
+  setClosedBayCounts: (counts: { [key: string]: number }) => void;
   setParkingLots: (lots: string[]) => void;
   setMonitoredCarparks: (carparks: string[]) => void;
   setIsLoading: (loading: boolean) => void;
@@ -89,10 +90,12 @@ export interface SideMenuProps {
   filters: {
     monitoredCarparks: boolean;
     paygZones: boolean;
+    baysInCap: boolean;
   };
   setFilters: React.Dispatch<React.SetStateAction<{
     monitoredCarparks: boolean;
     paygZones: boolean;
+    baysInCap: boolean;
   }>>;
 }
 

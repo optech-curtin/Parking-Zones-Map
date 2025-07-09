@@ -10,8 +10,12 @@ interface SideMenuProps {
   setIsZoneInfoMinimized: (minimized: boolean) => void;
   isFilterOpen: boolean;
   setIsFilterOpen: (open: boolean) => void;
-  filters: { monitoredCarparks: boolean; paygZones: boolean };
-  setFilters: React.Dispatch<React.SetStateAction<{ monitoredCarparks: boolean; paygZones: boolean }>>;
+  filters: { monitoredCarparks: boolean; paygZones: boolean; baysInCap: boolean };
+  setFilters: React.Dispatch<React.SetStateAction<{ monitoredCarparks: boolean; paygZones: boolean; baysInCap: boolean }>>;
+  selectedBayTypeFilter: string | null;
+  handleBayTypeSelect: (bayType: string) => void;
+  parkingLotsWithSelectedBayType: string[];
+  isBayTypeFilterLoading: boolean;
 }
 
 export default function SideMenu({
@@ -23,6 +27,10 @@ export default function SideMenu({
   setIsFilterOpen,
   filters,
   setFilters,
+  selectedBayTypeFilter,
+  handleBayTypeSelect,
+  parkingLotsWithSelectedBayType,
+  isBayTypeFilterLoading,
 }: SideMenuProps) {
   const { 
     state: { 
@@ -40,7 +48,7 @@ export default function SideMenu({
 
   const isCarparkOpen = !carparkStatus[selectedParkingLot];
 
-  const handleFilterChange = (filterType: 'monitoredCarparks' | 'paygZones') => {
+  const handleFilterChange = (filterType: 'monitoredCarparks' | 'paygZones' | 'baysInCap') => {
     setFilters(prev => ({
       ...prev,
       [filterType]: !prev[filterType]
@@ -66,9 +74,23 @@ export default function SideMenu({
       
       return paygFilteredCounts;
     }
+
+    // Apply Bays in Cap filter if active
+    if (filters.baysInCap) {
+      const baysInCapTypes = ['Green', 'White', 'Yellow', 'Blue', 'Reserved', 'ACROD', 'Courtesy', 'EV', '15Minute', '30Minute', '90Minute', 'Maintenance', 'Faculty'];
+      const baysInCapFilteredCounts: { [key: string]: number } = {};
+      
+      Object.entries(filteredCounts).forEach(([type, count]) => {
+        if (baysInCapTypes.includes(type)) {
+          baysInCapFilteredCounts[type] = count;
+        }
+      });
+      
+      return baysInCapFilteredCounts;
+    }
     
     return filteredCounts;
-  }, [closedBayCounts, filters.paygZones]);
+  }, [closedBayCounts, filters.paygZones, filters.baysInCap]);
 
   const filteredBayTypes = React.useMemo(() => {
     // Use monitoredBayCounts if the monitoredCarparks filter is active, otherwise use totalBayCounts
@@ -79,13 +101,38 @@ export default function SideMenu({
       filtered = filtered.filter(([type]) => ['Green', 'Yellow', 'Blue', 'White'].includes(type));
     }
 
+    if (filters.baysInCap) {
+      filtered = filtered.filter(([type]) => ['Green', 'White', 'Yellow', 'Blue', 'Reserved', 'ACROD', 'Courtesy', 'EV', '15Minute', '30Minute', '90Minute', 'Maintenance', 'Faculty'].includes(type));
+    }
+
     return filtered.sort(([, a], [, b]) => b - a);
-  }, [totalBayCounts, monitoredBayCounts, filters.paygZones, filters.monitoredCarparks]);
+  }, [totalBayCounts, monitoredBayCounts, filters.paygZones, filters.monitoredCarparks, filters.baysInCap]);
 
   // Calculate total closed bays across all bay types for filtered parking lots
   const totalClosedBays = React.useMemo(() => {
     return Object.values(filteredClosedBayCounts).reduce((sum, count) => sum + count, 0);
   }, [filteredClosedBayCounts]);
+
+  // Calculate total bays in cap (matching the baysInCap filter criteria)
+  const totalBaysInCap = React.useMemo(() => {
+    const baysInCapTypes = ['Green', 'White', 'Yellow', 'Blue', 'Reserved', 'ACROD', 'Courtesy', 'EV', '15Minute', '30Minute', '90Minute', 'Maintenance', 'Faculty'];
+    
+    // Start with all bay types that match baysInCap criteria
+    let eligibleTypes = baysInCapTypes;
+    
+    // Apply PAYG filter if active
+    if (filters.paygZones) {
+      const paygTypes = ['Green', 'Yellow', 'Blue', 'White'];
+      eligibleTypes = eligibleTypes.filter(type => paygTypes.includes(type));
+    }
+    
+    // Apply monitored carparks filter if active
+    const counts = filters.monitoredCarparks ? monitoredBayCounts : totalBayCounts;
+    
+    return Object.entries(counts)
+      .filter(([type]) => eligibleTypes.includes(type))
+      .reduce((sum, [, count]) => sum + count, 0);
+  }, [totalBayCounts, monitoredBayCounts, filters.paygZones, filters.monitoredCarparks]);
 
   return (
     <>
@@ -96,7 +143,7 @@ export default function SideMenu({
             <div className="flex items-center">
               <button
                 onClick={() => setIsZoneInfoMinimized(!isZoneInfoMinimized)}
-                className="p-2 rounded-full hover:bg-[var(--menu-hover)] transition-colors"
+                className="p-0.5 rounded-full hover:bg-[var(--menu-hover)] transition-colors"
               >
                 <svg
                   className={`w-5 h-5 transform transition-transform duration-200 text-[var(--text-secondary)] ${
@@ -119,7 +166,7 @@ export default function SideMenu({
             <div className="flex space-x-1">
               <button
                 onClick={() => setIsFilterOpen(!isFilterOpen)}
-                className="p-2 rounded-full hover:bg-[var(--menu-hover)] transition-colors"
+                className="p-0.5 rounded-full hover:bg-[var(--menu-hover)] transition-colors"
               >
                 <svg
                   className="w-5 h-5 text-[var(--text-secondary)]"
@@ -137,7 +184,7 @@ export default function SideMenu({
               </button>
               <button
                 onClick={onToggleMenu}
-                className="p-2 rounded-full hover:bg-[var(--menu-hover)] transition-colors"
+                className="p-0.5 rounded-full hover:bg-[var(--menu-hover)] transition-colors"
               >
                 <svg
                   className="w-5 h-5 text-[var(--text-secondary)]"
@@ -176,26 +223,48 @@ export default function SideMenu({
               ) : (
                 <div className="space-y-2 overflow-y-auto max-h-[calc(100vh-12rem)] pr-2">
                   {filteredBayTypes.map(([type, totalCount]) => (
-                    <div key={type} className="flex justify-between items-center">
+                    <button
+                      key={type}
+                      onClick={() => handleBayTypeSelect(type)}
+                      className={`w-full cursor-pointer flex justify-between items-center p-px rounded transition-colors ${
+                        selectedBayTypeFilter === type
+                          ? 'bg-[var(--accent-blue)] bg-opacity-20 border border-[var(--accent-blue)]'
+                          : 'hover:bg-[var(--menu-hover)]'
+                      }`}
+                    >
                       <div className="flex items-center space-x-2">
                         <div 
                           className="w-4 h-4 rounded-full border border-[var(--card-border)]"
                           style={{ backgroundColor: bayColors[type] || '#9E9E9E' }}
                         />
                         <span className="text-[var(--text-primary)]">{type}</span>
+                        {selectedBayTypeFilter === type && parkingLotsWithSelectedBayType.length > 0 && (
+                          <span className="text-xs text-[var(--accent-blue)] font-medium">
+                            ({parkingLotsWithSelectedBayType.length} lots)
+                          </span>
+                        )}
+                        {selectedBayTypeFilter === type && isBayTypeFilterLoading && (
+                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-[var(--accent-blue)]"></div>
+                        )}
                       </div>
                       <span className="font-medium text-[var(--text-primary)]">
                         {totalCount} {filteredClosedBayCounts[type] > 0 && (
                           <span className="text-[var(--accent-red)]">({filteredClosedBayCounts[type]} closed)</span>
                         )}
                       </span>
-                    </div>
+                    </button>
                   ))}
                   <div className="border-t border-[var(--card-border)] pt-2 mt-2 space-y-2 sticky bottom-0 bg-[var(--menu-body-bg)]">
                     <div className="flex justify-between font-semibold text-[var(--text-primary)]">
                       <span>Total Bays</span>
                       <span>
                         {filteredBayTypes.reduce((sum, [, count]) => sum + count, 0)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between font-semibold text-[var(--text-primary)]">
+                      <span>Total in Cap</span>
+                      <span className="text-[var(--accent-blue)]">
+                        {totalBaysInCap}
                       </span>
                     </div>
                     <div className="flex justify-between font-semibold text-[var(--text-primary)]">
@@ -242,6 +311,15 @@ export default function SideMenu({
                     className="rounded text-[var(--accent-blue)] focus:ring-[var(--accent-blue)]"
                   />
                   <span className="text-sm font-medium text-[var(--text-primary)]">ParkAid Monitored Carparks</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={filters.baysInCap}
+                    onChange={() => handleFilterChange('baysInCap')}
+                    className="rounded text-[var(--accent-blue)] focus:ring-[var(--accent-blue)]"
+                  />
+                  <span className="text-sm font-medium text-[var(--text-primary)]">Bays in Cap</span>
                 </div>
               </div>
             </div>

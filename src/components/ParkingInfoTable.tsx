@@ -3,7 +3,15 @@ import { useParking } from '../context/ParkingContext';
 import { ErrorBoundary } from './ErrorBoundary';
 import { ComponentError } from '../utils/errors';
 
-export default function ParkingInfoTable() {
+interface ParkingInfoTableProps {
+  filters: {
+    monitoredCarparks: boolean;
+    paygZones: boolean;
+    baysInCap: boolean;
+  };
+}
+
+export default function ParkingInfoTable({ filters }: ParkingInfoTableProps) {
   const [isMinimized, setIsMinimized] = React.useState(false);
   const { state } = useParking();
   const { selectedParkingLot, selectedBay, selectedBayAttributes, selectedBayCounts, selectedClosedBayCounts, isLoading, bayColors, error } = state;
@@ -22,6 +30,24 @@ export default function ParkingInfoTable() {
       );
     }
   };
+
+  // Calculate total bays in cap for the selected parking lot
+  const selectedParkingLotBaysInCap = React.useMemo(() => {
+    const baysInCapTypes = ['Green', 'White', 'Yellow', 'Blue', 'Reserved', 'ACROD', 'Courtesy', 'EV', '15Minute', '30Minute', '90Minute', 'Maintenance', 'Faculty'];
+    
+    // Start with all bay types that match baysInCap criteria
+    let eligibleTypes = baysInCapTypes;
+    
+    // Apply PAYG filter if active
+    if (filters.paygZones) {
+      const paygTypes = ['Green', 'Yellow', 'Blue', 'White'];
+      eligibleTypes = eligibleTypes.filter(type => paygTypes.includes(type));
+    }
+    
+    return selectedBayCounts
+      .filter(({ type }) => eligibleTypes.includes(cleanBayType(type)))
+      .reduce((sum, { count }) => sum + count, 0);
+  }, [selectedBayCounts, filters.paygZones]);
 
   if (error) {
     return (

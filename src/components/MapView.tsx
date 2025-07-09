@@ -1,9 +1,7 @@
 'use client';
 
 import React from 'react';
-import ParkingInfoTable from './ParkingInfoTable';
-import SideMenu from './SideMenu';
-import SearchMenu from './SearchMenu';
+import { LazyParkingInfoTable, LazySideMenu, LazySearchMenu } from './LazyComponents';
 import { useParking } from '../context/ParkingContext';
 import { useMap } from '../hooks/useMap';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -18,39 +16,47 @@ export default function MapViewComponent() {
   const {
     mapDivRef,
     isMenuOpen,
-    setIsMenuOpen,
+    toggleMenu,
     isZoneInfoMinimized,
-    setIsZoneInfoMinimized,
+    toggleZoneInfo,
     isFilterOpen,
-    setIsFilterOpen,
+    toggleFilter,
     filters,
     setFilters,
+    selectedBayTypeFilter,
+    handleBayTypeSelect,
+    parkingLotsWithSelectedBayType,
+    isBayTypeFilterLoading,
     handleSelectParkingLot
   } = useMap();
 
   return (
     <ErrorBoundary>
-    <div className="relative w-full h-screen">
-      <SearchMenu
-        parkingLots={parkingLots}
-        onSelectParkingLot={handleSelectParkingLot}
-        isZoneInfoMinimized={isZoneInfoMinimized}
-        isFilterOpen={isFilterOpen}
-        isMenuOpen={isMenuOpen}
-      />
-      <SideMenu
-        isOpen={isMenuOpen}
-        onToggleMenu={() => setIsMenuOpen(!isMenuOpen)}
-        isZoneInfoMinimized={isZoneInfoMinimized}
-        setIsZoneInfoMinimized={setIsZoneInfoMinimized}
-        isFilterOpen={isFilterOpen}
-        setIsFilterOpen={setIsFilterOpen}
-        filters={filters}
-        setFilters={setFilters}
-      />
-      <div ref={mapDivRef} className="w-full h-screen" />
-        <ParkingInfoTable />
-    </div>
+      <div className="relative w-full h-screen">
+        <LazySearchMenu
+          parkingLots={parkingLots}
+          onSelectParkingLot={handleSelectParkingLot}
+          isZoneInfoMinimized={isZoneInfoMinimized}
+          isFilterOpen={isFilterOpen}
+          isMenuOpen={isMenuOpen}
+        />
+        <LazySideMenu
+          isOpen={isMenuOpen}
+          onToggleMenu={toggleMenu}
+          isZoneInfoMinimized={isZoneInfoMinimized}
+          setIsZoneInfoMinimized={toggleZoneInfo}
+          isFilterOpen={isFilterOpen}
+          setIsFilterOpen={toggleFilter}
+          filters={filters}
+          setFilters={setFilters}
+          selectedBayTypeFilter={selectedBayTypeFilter}
+          handleBayTypeSelect={handleBayTypeSelect}
+          parkingLotsWithSelectedBayType={parkingLotsWithSelectedBayType}
+          isBayTypeFilterLoading={isBayTypeFilterLoading}
+        />
+        <div ref={mapDivRef} className="w-full h-screen" />
+        <LazyParkingInfoTable filters={filters} />
+      </div>
     </ErrorBoundary>
   );
 }
