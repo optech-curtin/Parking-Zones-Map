@@ -48,12 +48,34 @@ export default function SideMenu({
 
   const isCarparkOpen = !carparkStatus[selectedParkingLot];
 
-  const handleFilterChange = React.useCallback((filterType: 'monitoredCarparks' | 'paygZones' | 'baysInCap') => {
+
+
+  const handlePaygZonesChange = React.useCallback(() => {
     setFilters(prev => ({
       ...prev,
-      [filterType]: !prev[filterType]
+      paygZones: !prev.paygZones
     }));
   }, [setFilters]);
+
+  const handleMonitoredCarparksChange = React.useCallback(() => {
+    setFilters(prev => ({
+      ...prev,
+      monitoredCarparks: !prev.monitoredCarparks
+    }));
+  }, [setFilters]);
+
+  const handleBaysInCapChange = React.useCallback(() => {
+    setFilters(prev => ({
+      ...prev,
+      baysInCap: !prev.baysInCap
+    }));
+  }, [setFilters]);
+
+  const handleToggleCarparkStatus = React.useCallback(() => {
+    if (selectedParkingLot) {
+      toggleCarparkStatus(selectedParkingLot);
+    }
+  }, [toggleCarparkStatus, selectedParkingLot]);
 
   const handleBayTypeClick = React.useCallback((type: string) => {
     handleBayTypeSelect(type);
@@ -306,7 +328,7 @@ export default function SideMenu({
                   <input
                     type="checkbox"
                     checked={filters.paygZones}
-                    onChange={React.useCallback(() => handleFilterChange('paygZones'), [handleFilterChange])}
+                    onChange={handlePaygZonesChange}
                     className="rounded text-[var(--accent-blue)] focus:ring-[var(--accent-blue)]"
                   />
                   <span className="text-sm font-medium text-[var(--text-primary)]">PAYG Zones</span>
@@ -315,7 +337,7 @@ export default function SideMenu({
                   <input
                     type="checkbox"
                     checked={filters.monitoredCarparks}
-                    onChange={React.useCallback(() => handleFilterChange('monitoredCarparks'), [handleFilterChange])}
+                    onChange={handleMonitoredCarparksChange}
                     className="rounded text-[var(--accent-blue)] focus:ring-[var(--accent-blue)]"
                   />
                   <span className="text-sm font-medium text-[var(--text-primary)]">ParkAid Monitored Carparks</span>
@@ -324,7 +346,7 @@ export default function SideMenu({
                   <input
                     type="checkbox"
                     checked={filters.baysInCap}
-                    onChange={React.useCallback(() => handleFilterChange('baysInCap'), [handleFilterChange])}
+                    onChange={handleBaysInCapChange}
                     className="rounded text-[var(--accent-blue)] focus:ring-[var(--accent-blue)]"
                   />
                   <span className="text-sm font-medium text-[var(--text-primary)]">Bays in Cap</span>
@@ -352,7 +374,7 @@ export default function SideMenu({
                   <h3 className="text-lg font-semibold mb-4 text-[var(--text-primary)]">{selectedParkingLot}</h3>
                   <div className="space-y-4">
                     <button
-                      onClick={() => toggleCarparkStatus(selectedParkingLot)}
+                      onClick={handleToggleCarparkStatus}
                       className={`w-full p-2 rounded transition-colors ${
                         isCarparkOpen
                           ? 'bg-[var(--accent-red)] hover:bg-red-600'

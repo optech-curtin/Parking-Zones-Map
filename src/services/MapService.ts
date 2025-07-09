@@ -284,6 +284,9 @@ export class MapService {
       logger.debug('Initializing parking layer', 'MapService');
 
       // Get the existing parking layer from the WebMap
+      if (!view.map) {
+        throw new LayerInitializationError('Map is not initialized on the view', 'parkingLayer');
+      }
       const parkingLayer = view.map.layers.find(layer => {
         if (!(layer instanceof FeatureLayer)) return false;
         const featureLayer = layer as FeatureLayer;
@@ -366,6 +369,10 @@ export class MapService {
   private async initializeBayLayers(view: MapView): Promise<void> {
     try {
       logger.debug('Initializing bay layers', 'MapService');
+
+      if (!view.map) {
+        throw new LayerInitializationError('Map is not initialized on the view', 'baysLayer');
+      }
 
       // Create the bay layers with performance optimizations
       this.underBaysLayer = new FeatureLayer({
@@ -1107,6 +1114,10 @@ export class MapService {
   // Prevent feature unloading during navigation
   private preventFeatureUnloading(view: MapView): void {
     try {
+      if (!view.map) {
+        logger.warn('Map is not initialized on the view', 'MapService');
+        return;
+      }
       // Ensure all layers maintain their features
       view.map.layers.forEach(layer => {
         if (layer instanceof FeatureLayer) {
@@ -1137,7 +1148,7 @@ export class MapService {
       if (this.baysLayer) allLayers.push(this.baysLayer);
       
       // Add all webmap layers
-      if (this.view) {
+      if (this.view && this.view.map) {
         this.view.map.layers.forEach(layer => {
           if (layer instanceof FeatureLayer) {
             allLayers.push(layer);
@@ -1169,6 +1180,10 @@ export class MapService {
   // Configure all webmap layers to prevent unloading
   private configureWebMapLayers(view: MapView): void {
     try {
+      if (!view.map) {
+        logger.warn('Map is not initialized on the view', 'MapService');
+        return;
+      }
       logger.info('Configuring webmap layers with minimal settings', 'MapService');
       
       // Configure all layers in the webmap with minimal settings

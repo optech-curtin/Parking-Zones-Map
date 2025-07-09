@@ -69,7 +69,11 @@ export class MapInitializationService {
       });
 
       await parkingLayer.load();
-      view.map.add(parkingLayer);
+      if (view.map) {
+        view.map.add(parkingLayer);
+      } else {
+        throw new MapServiceError('Map is not initialized');
+      }
 
       logger.info('Parking layer initialized successfully', 'MapInitializationService');
       return parkingLayer;
@@ -96,8 +100,12 @@ export class MapInitializationService {
         baysLayer.load()
       ]);
 
-      view.map.add(underBaysLayer);
-      view.map.add(baysLayer);
+      if (view.map) {
+        view.map.add(underBaysLayer);
+        view.map.add(baysLayer);
+      } else {
+        throw new MapServiceError('Map is not initialized');
+      }
 
       logger.info('Bay layers initialized successfully', 'MapInitializationService');
       return { underBaysLayer, baysLayer };
