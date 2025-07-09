@@ -11,8 +11,12 @@ interface ParkingInfoTableProps {
   };
 }
 
-export default function ParkingInfoTable({ filters }: ParkingInfoTableProps) {
+export default function ParkingInfoTable({ filters: _filters }: ParkingInfoTableProps) {
   const [isMinimized, setIsMinimized] = React.useState(false);
+  
+  const handleToggleMinimize = React.useCallback(() => {
+    setIsMinimized(!isMinimized);
+  }, [isMinimized]);
   const { state } = useParking();
   const { selectedParkingLot, selectedBay, selectedBayAttributes, selectedBayCounts, selectedClosedBayCounts, isLoading, bayColors, error } = state;
 
@@ -30,24 +34,6 @@ export default function ParkingInfoTable({ filters }: ParkingInfoTableProps) {
       );
     }
   };
-
-  // Calculate total bays in cap for the selected parking lot
-  const selectedParkingLotBaysInCap = React.useMemo(() => {
-    const baysInCapTypes = ['Green', 'White', 'Yellow', 'Blue', 'Reserved', 'ACROD', 'Courtesy', 'EV', '15Minute', '30Minute', '90Minute', 'Maintenance', 'Faculty'];
-    
-    // Start with all bay types that match baysInCap criteria
-    let eligibleTypes = baysInCapTypes;
-    
-    // Apply PAYG filter if active
-    if (filters.paygZones) {
-      const paygTypes = ['Green', 'Yellow', 'Blue', 'White'];
-      eligibleTypes = eligibleTypes.filter(type => paygTypes.includes(type));
-    }
-    
-    return selectedBayCounts
-      .filter(({ type }) => eligibleTypes.includes(cleanBayType(type)))
-      .reduce((sum, { count }) => sum + count, 0);
-  }, [selectedBayCounts, filters.paygZones]);
 
   if (error) {
     return (
@@ -69,7 +55,7 @@ export default function ParkingInfoTable({ filters }: ParkingInfoTableProps) {
           <div className="flex items-center justify-between p-2 bg-[var(--menu-header-bg)] h-12 rounded-t-lg">
             <div className="flex items-center">
               <button
-                onClick={() => setIsMinimized(!isMinimized)}
+                onClick={handleToggleMinimize}
                 className="p-2 rounded-full hover:bg-[var(--menu-hover)] transition-colors"
                 aria-label={isMinimized ? "Expand table" : "Minimize table"}
               >
@@ -148,8 +134,9 @@ export default function ParkingInfoTable({ filters }: ParkingInfoTableProps) {
                               <span className="text-[var(--text-primary)]">{cleanedType}</span>
                             </div>
                             <span className="font-medium text-[var(--text-primary)]">
-                              {count} {closedCount > 0 && (
-                                <span className="text-[var(--accent-red)]">({closedCount} closed)</span>
+                              {count}
+                              {closedCount > 0 && (
+                                <span className="text-[var(--accent-red)]"> ({closedCount} closed)</span>
                               )}
                             </span>
                           </div>
@@ -160,14 +147,14 @@ export default function ParkingInfoTable({ filters }: ParkingInfoTableProps) {
                           <span>Total Bays</span>
                           <span>{selectedBayCounts.reduce((sum, { count }) => sum + count, 0)}</span>
                         </div>
-                        {Object.values(selectedClosedBayCounts).reduce((sum, count) => sum + count, 0) > 0 && (
+                        {Object.values(selectedClosedBayCounts).reduce((sum, count) => sum + count, 0) > 0 ? (
                           <div className="flex justify-between font-semibold text-[var(--text-primary)]">
                             <span>Total Closed</span>
                             <span className="text-[var(--accent-red)]">
                               {Object.values(selectedClosedBayCounts).reduce((sum, count) => sum + count, 0)}
                             </span>
                           </div>
-                        )}
+                        ) : null}
                       </div>
                       <div className="text-sm text-[var(--text-primary)] mt-4 p-3 bg-[var(--menu-hover)] border border-[var(--card-border)] rounded-lg">
                         <p>Zoom in to see individual bays. Click on a bay to select it.</p>

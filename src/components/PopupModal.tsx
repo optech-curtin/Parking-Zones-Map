@@ -9,10 +9,10 @@ interface PopupModalProps {
 const PopupModal: React.FC<PopupModalProps> = ({ initialBayCount, onSubmit, onClose }) => {
   const [bayCount, setBayCount] = useState<number>(initialBayCount);
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = React.useCallback((event: React.FormEvent) => {
     event.preventDefault();
     onSubmit(bayCount);
-  };
+  }, [onSubmit, bayCount]);
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
@@ -27,7 +27,7 @@ const PopupModal: React.FC<PopupModalProps> = ({ initialBayCount, onSubmit, onCl
               id="bayCount"
               type="number"
               value={bayCount}
-              onChange={(e) => setBayCount(parseInt(e.target.value, 10))}
+              onChange={React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => setBayCount(parseInt(e.target.value, 10)), [])}
               className="mt-1 block w-full rounded-md border-[var(--card-border)] bg-[var(--card-bg)] text-[var(--text-primary)] shadow-sm focus:border-[var(--accent-blue)] focus:ring-[var(--accent-blue)]"
               required
             />

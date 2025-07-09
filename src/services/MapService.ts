@@ -495,7 +495,7 @@ export class MapService {
   // Method to find bay layers in the webmap
   getWebMapBayLayers(): FeatureLayer[] {
     if (!this.view?.map) {
-      console.warn('Map view not available');
+      logger.warn('Map view not available', 'MapService');
       return [];
     }
 
@@ -512,15 +512,12 @@ export class MapService {
           const hasParkingLot = featureLayer.fields.some(f => f.name === 'parkinglot');
           
           if (hasBayType || hasParkingLot) {
-            console.log('Found potential bay layer:', featureLayer.id, featureLayer.title);
-            console.log('Layer fields:', featureLayer.fields.map(f => f.name));
             bayLayers.push(featureLayer);
           }
         }
       }
     });
 
-    console.log(`Found ${bayLayers.length} bay layers in webmap`);
     return bayLayers;
   }
 
@@ -583,7 +580,7 @@ export class MapService {
   }
 
   // Batch update renderer for better performance
-  private async updateRendererBatch(rendererConfig: any): Promise<void> {
+  private async updateRendererBatch(rendererConfig: __esri.Renderer): Promise<void> {
     try {
       const layers = [this.parkingLayer, this.underBaysLayer, this.baysLayer].filter(Boolean);
       
@@ -970,7 +967,7 @@ export class MapService {
   async verifyBayLayerFields(): Promise<void> {
     try {
       if (!this.underBaysLayer || !this.baysLayer) {
-        console.warn('Bay layers not initialized');
+        logger.warn('Bay layers not initialized', 'MapService');
         return;
       }
 
@@ -980,18 +977,15 @@ export class MapService {
         this.baysLayer.load()
       ]);
 
-      console.log('UnderBays Layer Fields:', this.underBaysLayer.fields?.map(f => f.name));
-      console.log('Bays Layer Fields:', this.baysLayer.fields?.map(f => f.name));
+      logger.debug('UnderBays Layer Fields:', 'MapService', this.underBaysLayer.fields?.map(f => f.name));
+      logger.debug('Bays Layer Fields:', 'MapService', this.baysLayer.fields?.map(f => f.name));
 
       // Check if baytype field exists
       const underBaysHasBayType = this.underBaysLayer.fields?.some(f => f.name === 'baytype');
       const baysHasBayType = this.baysLayer.fields?.some(f => f.name === 'baytype');
 
-      console.log('UnderBays has baytype field:', underBaysHasBayType);
-      console.log('Bays has baytype field:', baysHasBayType);
-
       if (!underBaysHasBayType || !baysHasBayType) {
-        console.warn('baytype field not found in one or both bay layers');
+        logger.warn('baytype field not found in one or both bay layers', 'MapService');
         return;
       }
 
@@ -1002,12 +996,10 @@ export class MapService {
       sampleQuery.where = '1=1';
       sampleQuery.num = 10; // Get first 10 features
 
-      const sampleResult = await this.underBaysLayer.queryFeatures(sampleQuery);
-      const bayTypes = [...new Set(sampleResult.features.map(f => f.attributes.baytype))];
-      console.log('Sample baytype values:', bayTypes);
-
+      await this.underBaysLayer.queryFeatures(sampleQuery);
+      // const bayTypes = [...new Set(sampleResult.features.map(f => f.attributes.baytype))];
     } catch (error) {
-      console.error('Error verifying bay layer fields:', error);
+      logger.error('Error verifying bay layer fields', 'MapService', error instanceof Error ? error : undefined);
     }
   }
 
@@ -1017,17 +1009,14 @@ export class MapService {
       const bayLayers = this.getWebMapBayLayers();
       
       if (bayLayers.length === 0) {
-        console.warn('No bay layers found in webmap');
+        logger.warn('No bay layers found in webmap', 'MapService');
         return;
       }
 
-      console.log(`Testing bay type filtering for: ${bayType}`);
-      console.log(`Found ${bayLayers.length} bay layers in webmap`);
-
       // Check layer visibility
       bayLayers.forEach((layer, index) => {
-        console.log(`Layer ${index} visible:`, layer.visible);
-        console.log(`Layer ${index} fields:`, layer.fields?.map(f => f.name));
+        logger.debug(`Layer ${index} visible:`, 'MapService', layer.visible);
+        logger.debug(`Layer ${index} fields:`, 'MapService', layer.fields?.map(f => f.name));
       });
 
       // Ensure layers are visible
@@ -1036,7 +1025,7 @@ export class MapService {
       });
 
       // Get total count before filtering
-      const totalCounts = await Promise.all(
+      await Promise.all(
         bayLayers.map(async layer => {
           const query = layer.createQuery();
           query.where = '1=1';
@@ -1046,8 +1035,6 @@ export class MapService {
           return result.features.length;
         })
       );
-
-      console.log(`Total features before filtering:`, totalCounts);
 
       // Set definition expression
       const definitionExpression = `baytype = '${bayType}'`;
@@ -1059,7 +1046,7 @@ export class MapService {
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Query to see how many features match after filtering
-      const filteredCounts = await Promise.all(
+      await Promise.all(
         bayLayers.map(async layer => {
           const query = layer.createQuery();
           query.where = '1=1'; // Query all visible features
@@ -1070,16 +1057,13 @@ export class MapService {
         })
       );
 
-      console.log(`Features after filtering for ${bayType}:`, filteredCounts);
-
       // Clear the filter
       bayLayers.forEach(layer => {
         layer.definitionExpression = "";
       });
 
-      console.log('Test completed - filter cleared');
     } catch (error) {
-      console.error('Error testing bay type filtering:', error);
+      logger.error('Error testing bay type filtering', 'MapService', error instanceof Error ? error : undefined);
     }
   }
 
@@ -1130,8 +1114,8 @@ export class MapService {
           layer.persistenceEnabled = true;
           
           // Additional properties to prevent unloading
-          (layer as any).loadAllFeatures = true;
-          (layer as any).disableClientCaching = false;
+          (layer as unknown as Record<string, unknown>).loadAllFeatures = true;
+          (layer as unknown as Record<string, unknown>).disableClientCaching = false;
         }
       });
     } catch (error) {

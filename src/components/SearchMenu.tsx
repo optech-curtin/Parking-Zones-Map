@@ -30,13 +30,13 @@ export default function SearchMenu({
     []
   );
 
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSearchChange = React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     // Update the input value immediately for UI responsiveness
     e.target.value = value;
     // Debounce the actual search query update
     debouncedSearch(value);
-  };
+  }, [debouncedSearch]);
 
   const filteredParkingLots = parkingLots
     .filter(lot => lot.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -54,7 +54,7 @@ export default function SearchMenu({
       return a.localeCompare(b);
     });
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = React.useCallback((e: React.KeyboardEvent) => {
     if (!searchQuery) return;
 
     switch (e.key) {
@@ -83,9 +83,9 @@ export default function SearchMenu({
         setHighlightedIndex(-1);
         break;
     }
-  };
+  }, [searchQuery, filteredParkingLots, highlightedIndex, onSelectParkingLot]);
 
-  const handleClear = (e: React.MouseEvent) => {
+  const handleClear = React.useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     setSearchQuery('');
     setHighlightedIndex(-1);
@@ -93,7 +93,17 @@ export default function SearchMenu({
       searchInputRef.current.value = '';
       searchInputRef.current.focus();
     }
-  };
+  }, []);
+
+  const handleLotSelect = React.useCallback((lot: string) => {
+    onSelectParkingLot(lot, true);
+    setIsFocused(false);
+    setHighlightedIndex(-1);
+  }, [onSelectParkingLot]);
+
+  const createLotSelectHandler = React.useCallback((lot: string) => () => {
+    handleLotSelect(lot);
+  }, [handleLotSelect]);
 
   // Reset highlighted index when search query changes
   useEffect(() => {
@@ -154,7 +164,7 @@ export default function SearchMenu({
               type="text"
               placeholder="Search parking lots..."
               onChange={handleSearchChange}
-              onFocus={() => setIsFocused(true)}
+              onFocus={React.useCallback(() => setIsFocused(true), [])}
               onKeyDown={handleKeyDown}
               className="w-full p-1 pl-8 pr-8 bg-transparent border-none focus:outline-none text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)]"
             />
@@ -171,7 +181,7 @@ export default function SearchMenu({
                 d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
               />
             </svg>
-            {searchQuery && (
+            {searchQuery ? (
               <button
                 onClick={handleClear}
                 className="absolute right-0 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-[var(--menu-hover)] transition-colors"
@@ -190,21 +200,17 @@ export default function SearchMenu({
                   />
                 </svg>
               </button>
-            )}
+            ) : null}
           </div>
         </div>
-        {searchQuery && (
+        {searchQuery ? (
           <div className="overflow-y-auto max-h-[calc(100vh-6rem)] bg-[var(--menu-body-bg)]">
             <div className="p-2">
               <div className="space-y-1" ref={listRef}>
                 {filteredParkingLots.map((lot, index) => (
                   <button
                     key={lot}
-                    onClick={() => {
-                      onSelectParkingLot(lot, true);
-                      setIsFocused(false);
-                      setHighlightedIndex(-1);
-                    }}
+                    onClick={createLotSelectHandler(lot)}
                     className={`w-full text-left px-3 py-2 rounded transition-colors text-sm text-[var(--text-primary)] ${
                       index === highlightedIndex 
                         ? 'bg-[var(--accent-blue)] bg-opacity-20 hover:bg-opacity-30' 
@@ -214,15 +220,15 @@ export default function SearchMenu({
                     {lot}
                   </button>
                 ))}
-                {filteredParkingLots.length === 0 && (
+                {filteredParkingLots.length === 0 ? (
                   <div className="text-center text-[var(--text-muted)] py-4 text-sm">
                     No parking lots found
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

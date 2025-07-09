@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   basePath: '/Parking-Zones-Map',
   assetPrefix: '/Parking-Zones-Map/',
+
   // Enable experimental features for better performance
   experimental: {
     optimizePackageImports: ['@arcgis/core'],

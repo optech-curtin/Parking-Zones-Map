@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import dynamic from 'next/dynamic';
 import { ToolProvider } from '../context/ToolContext';
 import { ParkingProvider } from '../context/ParkingContext';
@@ -32,7 +32,6 @@ export default function HomePage() {
   useEffect(() => {
     async function initArcGISAuth() {
       if (!portalUrl || !appId) {
-        console.error("Missing NEXT_PUBLIC_ARCGIS_PORTAL_URL or NEXT_PUBLIC_ARCGIS_APP_ID");
         setLoading(false);
         return;
       }
@@ -86,12 +85,12 @@ export default function HomePage() {
   }, [portalUrl, appId, setUserInfo]);
 
   // Sign out (destroy stored credentials)
-  const handleSignOut = async () => {
+  const handleSignOut = useCallback(async () => {
     const { default: IdentityManager } = await import("@arcgis/core/identity/IdentityManager");
     IdentityManager.destroyCredentials();
     setIsAuthenticated(false);
     setUserInfo(null);
-  };
+  }, [setUserInfo]);
 
   if (loading) {
     return (

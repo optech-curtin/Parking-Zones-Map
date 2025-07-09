@@ -49,25 +49,6 @@ class Logger {
     if (this.logs.length > this.maxLogs) {
       this.logs = this.logs.slice(-this.maxLogs);
     }
-
-    // Console output based on level
-    const prefix = context ? `[${context}]` : '';
-    const timestamp = entry.timestamp.toISOString();
-
-    switch (level) {
-      case LogLevel.DEBUG:
-        console.debug(`${timestamp} ${prefix} ${message}`, data || '');
-        break;
-      case LogLevel.INFO:
-        console.info(`${timestamp} ${prefix} ${message}`, data || '');
-        break;
-      case LogLevel.WARN:
-        console.warn(`${timestamp} ${prefix} ${message}`, data || '');
-        break;
-      case LogLevel.ERROR:
-        console.error(`${timestamp} ${prefix} ${message}`, error || data || '');
-        break;
-    }
   }
 
   public debug(message: string, context?: string, data?: unknown): void {

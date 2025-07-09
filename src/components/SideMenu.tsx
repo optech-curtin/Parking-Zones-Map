@@ -48,12 +48,20 @@ export default function SideMenu({
 
   const isCarparkOpen = !carparkStatus[selectedParkingLot];
 
-  const handleFilterChange = (filterType: 'monitoredCarparks' | 'paygZones' | 'baysInCap') => {
+  const handleFilterChange = React.useCallback((filterType: 'monitoredCarparks' | 'paygZones' | 'baysInCap') => {
     setFilters(prev => ({
       ...prev,
       [filterType]: !prev[filterType]
     }));
-  };
+  }, [setFilters]);
+
+  const handleBayTypeClick = React.useCallback((type: string) => {
+    handleBayTypeSelect(type);
+  }, [handleBayTypeSelect]);
+
+  const createBayTypeClickHandler = React.useCallback((type: string) => () => {
+    handleBayTypeClick(type);
+  }, [handleBayTypeClick]);
 
   // Get closed bays for filtered parking lots
   const filteredClosedBayCounts = React.useMemo(() => {
@@ -142,7 +150,7 @@ export default function SideMenu({
           <div className="flex items-center justify-between p-2 bg-[var(--menu-header-bg)] h-12 rounded-t-lg flex-shrink-0">
             <div className="flex items-center">
               <button
-                onClick={() => setIsZoneInfoMinimized(!isZoneInfoMinimized)}
+                onClick={React.useCallback(() => setIsZoneInfoMinimized(!isZoneInfoMinimized), [isZoneInfoMinimized, setIsZoneInfoMinimized])}
                 className="p-0.5 rounded-full hover:bg-[var(--menu-hover)] transition-colors"
               >
                 <svg
@@ -165,7 +173,7 @@ export default function SideMenu({
             </div>
             <div className="flex space-x-1">
               <button
-                onClick={() => setIsFilterOpen(!isFilterOpen)}
+                onClick={React.useCallback(() => setIsFilterOpen(!isFilterOpen), [isFilterOpen, setIsFilterOpen])}
                 className="p-0.5 rounded-full hover:bg-[var(--menu-hover)] transition-colors"
               >
                 <svg
@@ -225,7 +233,7 @@ export default function SideMenu({
                   {filteredBayTypes.map(([type, totalCount]) => (
                     <button
                       key={type}
-                      onClick={() => handleBayTypeSelect(type)}
+                      onClick={createBayTypeClickHandler(type)}
                       className={`w-full cursor-pointer flex justify-between items-center p-px rounded transition-colors ${
                         selectedBayTypeFilter === type
                           ? 'bg-[var(--accent-blue)] bg-opacity-20 border border-[var(--accent-blue)]'
@@ -238,19 +246,19 @@ export default function SideMenu({
                           style={{ backgroundColor: bayColors[type] || '#9E9E9E' }}
                         />
                         <span className="text-[var(--text-primary)]">{type}</span>
-                        {selectedBayTypeFilter === type && parkingLotsWithSelectedBayType.length > 0 && (
+                        {selectedBayTypeFilter === type && parkingLotsWithSelectedBayType.length > 0 ? (
                           <span className="text-xs text-[var(--accent-blue)] font-medium">
                             ({parkingLotsWithSelectedBayType.length} lots)
                           </span>
-                        )}
-                        {selectedBayTypeFilter === type && isBayTypeFilterLoading && (
+                        ) : null}
+                        {selectedBayTypeFilter === type && isBayTypeFilterLoading ? (
                           <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-[var(--accent-blue)]"></div>
-                        )}
+                        ) : null}
                       </div>
                       <span className="font-medium text-[var(--text-primary)]">
-                        {totalCount} {filteredClosedBayCounts[type] > 0 && (
+                        {totalCount} {filteredClosedBayCounts[type] > 0 ? (
                           <span className="text-[var(--accent-red)]">({filteredClosedBayCounts[type]} closed)</span>
-                        )}
+                        ) : null}
                       </span>
                     </button>
                   ))}
@@ -298,7 +306,7 @@ export default function SideMenu({
                   <input
                     type="checkbox"
                     checked={filters.paygZones}
-                    onChange={() => handleFilterChange('paygZones')}
+                    onChange={React.useCallback(() => handleFilterChange('paygZones'), [handleFilterChange])}
                     className="rounded text-[var(--accent-blue)] focus:ring-[var(--accent-blue)]"
                   />
                   <span className="text-sm font-medium text-[var(--text-primary)]">PAYG Zones</span>
@@ -307,7 +315,7 @@ export default function SideMenu({
                   <input
                     type="checkbox"
                     checked={filters.monitoredCarparks}
-                    onChange={() => handleFilterChange('monitoredCarparks')}
+                    onChange={React.useCallback(() => handleFilterChange('monitoredCarparks'), [handleFilterChange])}
                     className="rounded text-[var(--accent-blue)] focus:ring-[var(--accent-blue)]"
                   />
                   <span className="text-sm font-medium text-[var(--text-primary)]">ParkAid Monitored Carparks</span>
@@ -316,7 +324,7 @@ export default function SideMenu({
                   <input
                     type="checkbox"
                     checked={filters.baysInCap}
-                    onChange={() => handleFilterChange('baysInCap')}
+                    onChange={React.useCallback(() => handleFilterChange('baysInCap'), [handleFilterChange])}
                     className="rounded text-[var(--accent-blue)] focus:ring-[var(--accent-blue)]"
                   />
                   <span className="text-sm font-medium text-[var(--text-primary)]">Bays in Cap</span>

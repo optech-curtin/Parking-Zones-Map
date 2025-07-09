@@ -5,7 +5,6 @@ import FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import type { ParkingFeatureAttributes, BayFeatureAttributes } from '../types';
 import { debounce } from '../utils/debounce';
 import { logger } from '../utils/logger';
-import { ARCGIS_CONFIG } from '../constants';
 
 const PARKING_LAYER_URL = "https://arcgis.curtin.edu.au/arcgis/rest/services/ParKam/ParKam/FeatureServer/4";
 
@@ -395,8 +394,7 @@ export function useMap() {
       setTotalBayCounts,
       setMonitoredBayCounts,
       setIndividualBayClosedCounts,
-      setSelectedBayCounts,
-      setSelectedClosedBayCounts,
+
       setClosedBayCounts
     } = stateSetters;
 

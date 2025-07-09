@@ -90,10 +90,10 @@ export const TEMP_PARKING_LOT_PATTERN = /^TCP\d+$/i;
 
 // Type Guards
 export const isPaygBayType = (bayType: string): boolean => 
-  BAY_TYPE_GROUPS.PAYG.includes(bayType as any);
+  Array.prototype.includes.call(BAY_TYPE_GROUPS.PAYG, bayType);
 
 export const isBaysInCapType = (bayType: string): boolean => 
-  BAY_TYPE_GROUPS.BAYS_IN_CAP.includes(bayType as any);
+  Array.prototype.includes.call(BAY_TYPE_GROUPS.BAYS_IN_CAP, bayType);
 
 export const isTemporaryParkingLot = (parkingLot: string): boolean => 
   TEMP_PARKING_LOT_PATTERN.test(parkingLot.trim()); 

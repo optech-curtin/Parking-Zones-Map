@@ -16,16 +16,16 @@ const ToolPanel: React.FC = () => {
 
   return (
     <div className="flex space-x-4 p-4 bg-[var(--menu-header-bg)] shadow-[var(--shadow)] border border-[var(--card-border)] rounded-lg">
-      <button className={buttonClasses('close')} onClick={() => setSelectedTool('close')}>
+      <button className={buttonClasses('close')} onClick={React.useCallback(() => setSelectedTool('close'), [setSelectedTool])}>
         Close Carpark
       </button>
-      <button className={buttonClasses('open')} onClick={() => setSelectedTool('open')}>
+      <button className={buttonClasses('open')} onClick={React.useCallback(() => setSelectedTool('open'), [setSelectedTool])}>
         Open Carpark
       </button>
-      <button className={buttonClasses('editBays')} onClick={() => setSelectedTool('editBays')}>
+      <button className={buttonClasses('editBays')} onClick={React.useCallback(() => setSelectedTool('editBays'), [setSelectedTool])}>
         Edit Bays
       </button>
-      <button className={buttonClasses('none')} onClick={() => setSelectedTool('none')}>
+      <button className={buttonClasses('none')} onClick={React.useCallback(() => setSelectedTool('none'), [setSelectedTool])}>
         None
       </button>
     </div>
