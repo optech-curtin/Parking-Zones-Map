@@ -1,8 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: 'export',
   basePath: '/Parking-Zones-Map',
   assetPrefix: '/Parking-Zones-Map/',
+  
 
   // Enable experimental features for better performance
   experimental: {
@@ -97,9 +99,6 @@ const nextConfig: NextConfig = {
   env: {
     CUSTOM_KEY: process.env.CUSTOM_KEY,
   },
-
-  // Output configuration
-  output: 'standalone',
 
   // TypeScript configuration
   typescript: {
