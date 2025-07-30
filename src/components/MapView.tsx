@@ -28,7 +28,9 @@ export default function MapViewComponent({ authProgress }: MapViewComponentProps
 
   // Combine authentication and map loading states
   const isCombinedLoading = isLoading || (authProgress && authProgress.progress < 100);
-  const combinedProgress = isLoading ? loadingProgress : (authProgress || { phase: 'initializing', progress: 0, message: 'Loading...' });
+  const combinedProgress = isLoading 
+    ? loadingProgress 
+    : (authProgress ?? { phase: 'initializing' as const, progress: 0, message: 'Loading...' });
 
   const {
     isMenuOpen,
@@ -53,10 +55,9 @@ export default function MapViewComponent({ authProgress }: MapViewComponentProps
         <div ref={mapDivRef} className="w-full h-screen" />
         
         {/* Show loading screen as overlay if still loading */}
-        {isCombinedLoading && <LoadingScreen progress={combinedProgress} />}
-        
-        {/* Only show UI components when not loading */}
-        {!isCombinedLoading && (
+        {isCombinedLoading ? (
+          <LoadingScreen progress={combinedProgress} />
+        ) : (
           <>
             <LazySearchMenu
               parkingLots={parkingLots}
