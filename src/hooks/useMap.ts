@@ -231,6 +231,8 @@ export function useMap() {
 
   // Optimized click handler with better performance
   const setupClickHandler = useCallback((view: __esri.MapView) => {
+    logger.debug('Setting up click handler for view', 'useMap');
+    
     // Remove existing click handler if any
     if (clickHandlerRef.current) {
       clickHandlerRef.current.remove();
@@ -238,12 +240,28 @@ export function useMap() {
 
     // Create optimized click handler
     clickHandlerRef.current = view.on('click', async (event) => {
+      logger.info('Click event received', 'useMap');
       try {
         const parkingLayer = mapServiceRef.current?.getParkingLayer();
         const underBaysLayer = mapServiceRef.current?.getUnderBaysLayer();
         const baysLayer = mapServiceRef.current?.getBaysLayer();
         
-
+        logger.debug(`Layers found - Parking: ${!!parkingLayer}, UnderBays: ${!!underBaysLayer}, Bays: ${!!baysLayer}`, 'useMap');
+        if (underBaysLayer) {
+          logger.debug(`UnderBays layer title: ${underBaysLayer.title || 'Unknown'}`, 'useMap');
+        }
+        if (baysLayer) {
+          logger.debug(`Bays layer title: ${baysLayer.title || 'Unknown'}`, 'useMap');
+        }
+        
+        // Debug layer information (only in development)
+        if (process.env.NODE_ENV === 'development' && view.map) {
+          const mapLayers = view.map.layers.toArray();
+          const bayLayers = mapLayers.filter(layer => 
+            layer.title && layer.title.toLowerCase().includes('bay')
+          );
+          logger.debug(`Map has ${mapLayers.length} layers, ${bayLayers.length} bay-related`, 'useMap');
+        }
         
         if (!parkingLayer) {
           logger.error('Parking layer not available for click handling', 'useMap');
@@ -252,17 +270,65 @@ export function useMap() {
 
         const response = await view.hitTest(event);
         
+        logger.debug(`Hit test response results: ${response.results.length}`, 'useMap');
+        
         // Define zoom threshold for bay interaction
         const BAY_INTERACTION_ZOOM = 19;
         
         logger.debug(`Current zoom level: ${view.zoom}, Threshold: ${BAY_INTERACTION_ZOOM}`, 'useMap');
+        logger.debug(`Zoom level comparison: ${view.zoom} >= ${BAY_INTERACTION_ZOOM} = ${view.zoom >= BAY_INTERACTION_ZOOM}`, 'useMap');
         
         if (view.zoom >= BAY_INTERACTION_ZOOM) {
+          logger.info(`High zoom level (${view.zoom}) - looking for bay features`, 'useMap');
+          logger.info(`Response results count: ${response.results.length}`, 'useMap');
+          logger.debug(`About to check each result for bay layers...`, 'useMap');
+          
           // At high zoom levels, ONLY interact with bay layers
+          logger.debug(`Looking for bay features in ${response.results.length} results`, 'useMap');
+          
+          // Debug bay layer detection (only in development)
+          if (process.env.NODE_ENV === 'development') {
+            response.results.forEach((result, index) => {
+              if ('graphic' in result) {
+                const layer = result.graphic.layer;
+                const layerTitle = layer?.title || 'Unknown';
+                const layerTitleLower = layerTitle.toLowerCase();
+                const isUnderBays = layer === underBaysLayer || 
+                                   layerTitleLower.includes('bays under') || 
+                                   layerTitleLower.includes('bay under');
+                const isBays = layer === baysLayer || 
+                              (layerTitleLower.includes('bay') && !layerTitleLower.includes('under') && !layerTitleLower.includes('lot'));
+                if (isBays || isUnderBays) {
+                  logger.debug(`Result ${index}: Layer = ${layerTitle}, isUnderBays = ${isUnderBays}, isBays = ${isBays}`, 'useMap');
+                }
+              }
+            });
+          }
+          
           const bayFeature = response.results.find(
             (result) => 'graphic' in result && 
-            (result.graphic?.layer === underBaysLayer || result.graphic?.layer === baysLayer)
+            (() => {
+              const layer = result.graphic?.layer;
+              const layerTitle = layer?.title || '';
+              const layerTitleLower = layerTitle.toLowerCase();
+              const isExactUnderBays = layer === underBaysLayer;
+              const isExactBays = layer === baysLayer;
+              const isTitleUnderBays = layerTitleLower.includes('bays under') || layerTitleLower.includes('bay under');
+              const isTitleBays = layerTitleLower.includes('bay') && !layerTitleLower.includes('under') && !layerTitleLower.includes('lot');
+              
+              // Only log if it's a bay layer or in development
+              if (isTitleBays || isTitleUnderBays || process.env.NODE_ENV === 'development') {
+                logger.debug(`Checking layer: ${layerTitle}, isExactUnderBays=${isExactUnderBays}, isExactBays=${isExactBays}, isTitleUnderBays=${isTitleUnderBays}, isTitleBays=${isTitleBays}`, 'useMap');
+              }
+              
+              return isExactUnderBays || isExactBays || isTitleUnderBays || isTitleBays;
+            })()
           );
+          
+          logger.debug(`Bay feature found: ${!!bayFeature}`, 'useMap');
+          if (bayFeature && 'graphic' in bayFeature) {
+            logger.debug(`Bay feature layer: ${bayFeature.graphic.layer?.title || 'Unknown'}`, 'useMap');
+          }
 
           if (bayFeature && 'graphic' in bayFeature) {
             const attributes = bayFeature.graphic.attributes as BayFeatureAttributes;
@@ -274,7 +340,18 @@ export function useMap() {
             }
             
             // Create a bay ID for display purposes
-            const bayId = `${attributes.parkinglot || 'Unknown'}_${attributes.baytype || 'Unknown'}_${attributes.objectid}`;
+            // Extract parking lot from parkaid_zone for the bay ID
+            let parkingLotForId = 'Unknown';
+            if (attributes.parkaid_zone && typeof attributes.parkaid_zone === 'string') {
+              const zoneParts = attributes.parkaid_zone.split('-');
+              if (zoneParts.length >= 2) {
+                parkingLotForId = zoneParts[1]; // Get the middle part (PE3 in this case)
+              }
+            }
+            const bayId = `${parkingLotForId}_${attributes.baytype || 'Unknown'}_${attributes.objectid}`;
+            
+            logger.debug(`Setting selected bay: ${bayId}`, 'useMap');
+            logger.debug(`Bay attributes: ${JSON.stringify(attributes)}`, 'useMap');
             
             // Set selected and highlighted bay
             setSelectedBay(bayId);
@@ -290,7 +367,15 @@ export function useMap() {
             setHighlightedParkingLot('');
             
             // Set the parking lot context but DON'T highlight the parking lot
-            const parkingLot = mapServiceRef.current?.cleanString(attributes.parkinglot || 'Unknown');
+            // Extract parking lot from parkaid_zone (e.g., "BEN-PH1-Yellow" -> "PH1")
+            let parkingLot = 'Unknown';
+            if (attributes.parkaid_zone && typeof attributes.parkaid_zone === 'string') {
+              const zoneParts = attributes.parkaid_zone.split('-');
+              if (zoneParts.length >= 2) {
+                parkingLot = zoneParts[1]; // Get the middle part (PH1 in this case)
+              }
+            }
+            parkingLot = mapServiceRef.current?.cleanString(parkingLot) || parkingLot;
             if (parkingLot) {
               setSelectedParkingLot(parkingLot);
               
@@ -308,6 +393,7 @@ export function useMap() {
               }
             }
           } else {
+            logger.debug('No bay feature found at high zoom, clearing bay selection', 'useMap');
             // At high zoom, if no bay was clicked, clear everything
             setSelectedBay(null);
             setHighlightedBay(null);
@@ -327,19 +413,35 @@ export function useMap() {
           // At low zoom levels, only interact with parking lots
           const nonBayResults = response.results.filter(
             (result) => 'graphic' in result && 
-            result.graphic?.layer !== underBaysLayer && 
-            result.graphic?.layer !== baysLayer
+            (() => {
+              const layer = result.graphic?.layer;
+              const layerTitle = layer?.title || '';
+              const layerTitleLower = layerTitle.toLowerCase();
+              const isUnderBays = layer === underBaysLayer || 
+                                 layerTitleLower.includes('bays under') || 
+                                 layerTitleLower.includes('bay under');
+              const isBays = layer === baysLayer || 
+                            (layerTitleLower.includes('bay') && !layerTitleLower.includes('under') && !layerTitleLower.includes('lot'));
+              return !isUnderBays && !isBays;
+            })()
           );
           
           const parkingFeature = nonBayResults.find(
             (result) => 'graphic' in result && result.graphic?.layer === parkingLayer
           );
 
+          logger.info(`Click handler - Zoom level: ${view.zoom}, Found parking feature: ${!!parkingFeature}`, 'useMap');
+
           if (parkingFeature && 'graphic' in parkingFeature) {
             const attributes = parkingFeature.graphic.attributes as ParkingFeatureAttributes;
             const rawParkingLot = attributes.Zone || 'Unknown';
             const parkingLot = mapServiceRef.current?.cleanString(rawParkingLot);
+            
+            logger.info(`Click handler - Raw parking lot: "${rawParkingLot}", Cleaned: "${parkingLot}"`, 'useMap');
+            
             if (parkingLot) {
+              logger.info(`Selecting parking lot: ${parkingLot}`, 'useMap');
+              
               setSelectedParkingLot(parkingLot);
               setHighlightedParkingLot(parkingLot);
               
@@ -347,6 +449,9 @@ export function useMap() {
                 mapServiceRef.current?.getSelectedParkingLotBays(parkingLot),
                 mapServiceRef.current?.getSelectedParkingLotClosedBays(parkingLot)
               ]);
+              
+              logger.debug(`Selected bays: ${JSON.stringify(selectedBays)}`, 'useMap');
+              logger.debug(`Selected closed bays: ${JSON.stringify(selectedClosedBays)}`, 'useMap');
               
               if (selectedBays) {
                 setSelectedBayCounts(selectedBays);
@@ -357,6 +462,7 @@ export function useMap() {
               }
             }
           } else {
+            logger.info('No parking feature found, clearing selection', 'useMap');
             setSelectedParkingLot('');
             setHighlightedParkingLot('');
             setSelectedBayCounts([]);
@@ -418,8 +524,10 @@ export function useMap() {
       logger.info('Initializing map service', 'useMap');
 
       // Initialize map service
+      logger.debug('Creating new MapService instance', 'useMap');
       const mapService = new MapService();
       mapServiceRef.current = mapService;
+      logger.debug('MapService instance created successfully', 'useMap');
 
       // Initialize the map
       if (!mapDivRef.current) {
@@ -467,7 +575,9 @@ export function useMap() {
       setClosedBayCounts(mapService.getIndividualBayClosedCounts());
 
       // Set up optimized click handler
+      logger.info('Setting up click handler', 'useMap');
       setupClickHandler(view);
+      logger.info('Click handler setup completed', 'useMap');
 
       isInitializedRef.current = true;
       logger.info('Map initialization completed', 'useMap');

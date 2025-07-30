@@ -20,6 +20,8 @@ export default function ParkingInfoTable({ filters: _filters }: ParkingInfoTable
   const { state } = useParking();
   const { selectedParkingLot, selectedBay, selectedBayAttributes, selectedBayCounts, selectedClosedBayCounts, isLoading, bayColors, error } = state;
 
+
+
   const cleanBayType = (type: string): string => {
     try {
       return type
@@ -51,7 +53,7 @@ export default function ParkingInfoTable({ filters: _filters }: ParkingInfoTable
   // Calculate totalClosed and the JSX for the row outside of JSX return
   let totalClosedRow: React.ReactNode = null;
   if (selectedParkingLot && selectedBayCounts && selectedClosedBayCounts) {
-    const totalClosed = Object.values(selectedClosedBayCounts).reduce((sum, count) => sum + count, 0);
+    const totalClosed = Object.values(selectedClosedBayCounts || {}).reduce((sum, count) => sum + count, 0);
     if (totalClosed > 0) {
       totalClosedRow = (
         <div className="flex justify-between font-semibold text-[var(--text-primary)]">
@@ -95,67 +97,83 @@ export default function ParkingInfoTable({ filters: _filters }: ParkingInfoTable
       : [];
 
   // Move all conditional rendering for the selectedParkingLot block out of the JSX return
-  let parkingLotContent: React.ReactNode = <></>;
-  if (selectedBay) {
-    parkingLotContent = (
-      <>
-        <h3 className="text-lg font-semibold mb-4 text-[var(--text-primary)]">Selected Bay</h3>
-        <div className="space-y-2">
-          {selectedBayAttributes && (
-            <>
-              <div className="flex justify-between items-center">
-                <span className="text-[var(--text-primary)]">Zone</span>
-                <div className="flex items-center space-x-2">
-                  <div
-                    className="w-4 h-4 rounded-full border border-[var(--card-border)]"
-                    style={{ backgroundColor: bayColors[selectedBayAttributes.baytype] || '#9E9E9E' }}
-                    role="img"
-                    aria-label={`${selectedBayAttributes.baytype} bay type indicator`}
-                  />
-                  <span className="font-medium text-[var(--text-primary)]">{selectedBayAttributes.baytype || 'Unknown'}</span>
-                </div>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-[var(--text-primary)]">Parking Lot</span>
-                <span className="font-medium text-[var(--text-primary)]">{selectedBayAttributes.parkinglot || 'Unknown'}</span>
-              </div>
-            </>
-          )}
-        </div>
-      </>
-    );
-  } else if (selectedParkingLot) {
-    parkingLotContent = (
-      <>
-        <h3 className="text-lg font-semibold mb-4 text-[var(--text-primary)]">{selectedParkingLot}</h3>
-        {isLoading ? (
-          <div className="flex justify-center items-center h-32">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--accent-blue)]"></div>
-          </div>
-        ) : (
+  const parkingLotContent: React.ReactNode = (() => {
+    if (selectedBay) {
+      return (
+        <>
+          <h3 className="text-lg font-semibold mb-4 text-[var(--text-primary)]">Selected Bay</h3>
           <div className="space-y-2">
-            {bayCountRows}
-            <div className="border-t border-[var(--card-border)] pt-2 mt-2">
-              <div className="flex justify-between font-semibold text-[var(--text-primary)]">
-                <span>Total Bays</span>
-                <span>{selectedBayCounts.reduce((sum, { count }) => sum + count, 0)}</span>
+            {selectedBayAttributes ? (
+              <>
+                <div className="flex justify-between items-center">
+                  <span className="text-[var(--text-primary)]">Zone</span>
+                  <div className="flex items-center space-x-2">
+                    <div
+                      className="w-4 h-4 rounded-full border border-[var(--card-border)]"
+                      style={{ backgroundColor: bayColors[selectedBayAttributes.baytype] || '#9E9E9E' }}
+                      role="img"
+                      aria-label={`${selectedBayAttributes.baytype} bay type indicator`}
+                    />
+                    <span className="font-medium text-[var(--text-primary)]">{selectedBayAttributes.baytype || 'Unknown'}</span>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[var(--text-primary)]">Parking Lot</span>
+                  <span className="font-medium text-[var(--text-primary)]">
+                    {(() => {
+                      // Extract parking lot from parkaid_zone (e.g., "BEN-PH1-Yellow" -> "PH1")
+                      if (selectedBayAttributes.parkaid_zone && typeof selectedBayAttributes.parkaid_zone === 'string') {
+                        const zoneParts = selectedBayAttributes.parkaid_zone.split('-');
+                        if (zoneParts.length >= 2) {
+                          return zoneParts[1]; // Get the middle part (PH1 in this case)
+                        }
+                      }
+                      return 'Unknown';
+                    })()}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="text-center text-[var(--text-muted)] py-4">
+                No bay information available
               </div>
-              {totalClosedRow}
-            </div>
-            <div className="text-sm text-[var(--text-primary)] mt-4 p-3 bg-[var(--menu-hover)] border border-[var(--card-border)] rounded-lg">
-              <p>Zoom in to see individual bays. Click on a bay to select it.</p>
-            </div>
+            )}
           </div>
-        )}
-      </>
-    );
-  } else {
-    parkingLotContent = (
-      <div className="text-center text-[var(--text-muted)] py-8">
-        No parking lot selected
-      </div>
-    );
-  }
+        </>
+      );
+    } else if (selectedParkingLot) {
+      return (
+        <>
+          <h3 className="text-lg font-semibold mb-4 text-[var(--text-primary)]">{selectedParkingLot}</h3>
+          {isLoading ? (
+            <div className="flex justify-center items-center h-32">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--accent-blue)]"></div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {bayCountRows}
+              <div className="border-t border-[var(--card-border)] pt-2 mt-2">
+                <div className="flex justify-between font-semibold text-[var(--text-primary)]">
+                  <span>Total Bays</span>
+                  <span>{selectedBayCounts?.reduce((sum, { count }) => sum + count, 0) || 0}</span>
+                </div>
+                {totalClosedRow}
+              </div>
+              <div className="text-sm text-[var(--text-primary)] mt-4 p-3 bg-[var(--menu-hover)] border border-[var(--card-border)] rounded-lg">
+                <p>Zoom in to see individual bays. Click on a bay to select it.</p>
+              </div>
+            </div>
+          )}
+        </>
+      );
+    } else {
+      return (
+        <div className="text-center text-[var(--text-muted)] py-8">
+          No parking lot selected
+        </div>
+      );
+    }
+  })();
 
   return (
     <ErrorBoundary>

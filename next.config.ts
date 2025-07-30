@@ -2,8 +2,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: 'export',
-  basePath: '/Parking-Zones-Map',
-  assetPrefix: '/Parking-Zones-Map/',
+  // Only use basePath and assetPrefix in production for GitHub Pages
+  ...(process.env.NODE_ENV === 'production' ? {
+    basePath: '/Parking-Zones-Map',
+    assetPrefix: '/Parking-Zones-Map/',
+  } : {}),
   
 
   // Enable experimental features for better performance
@@ -72,28 +75,30 @@ const nextConfig: NextConfig = {
   // Compression
   compress: true,
 
-  // Security headers
-  async headers() {
-    return [
-      {
-        source: '/(.*)',
-        headers: [
-          {
-            key: 'X-Frame-Options',
-            value: 'DENY',
-          },
-          {
-            key: 'X-Content-Type-Options',
-            value: 'nosniff',
-          },
-          {
-            key: 'Referrer-Policy',
-            value: 'no-referrer-when-downgrade', // More permissive for cross-origin requests
-          },
-        ],
-      },
-    ];
-  },
+  // Security headers - only applied when not using static export
+  ...(process.env.NODE_ENV === 'production' && !process.env.STATIC_EXPORT ? {
+    async headers() {
+      return [
+        {
+          source: '/(.*)',
+          headers: [
+            {
+              key: 'X-Frame-Options',
+              value: 'DENY',
+            },
+            {
+              key: 'X-Content-Type-Options',
+              value: 'nosniff',
+            },
+            {
+              key: 'Referrer-Policy',
+              value: 'no-referrer-when-downgrade', // More permissive for cross-origin requests
+            },
+          ],
+        },
+      ];
+    },
+  } : {}),
 
   // Environment variables
   env: {

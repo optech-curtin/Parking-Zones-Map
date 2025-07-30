@@ -21,7 +21,7 @@ class Logger {
   private readonly minLevel: LogLevel;
 
   private constructor() {
-    this.minLevel = process.env.NODE_ENV === 'production' ? LogLevel.WARN : LogLevel.DEBUG;
+    this.minLevel = process.env.NODE_ENV === 'production' ? LogLevel.ERROR : LogLevel.DEBUG;
   }
 
   public static getInstance(): Logger {
@@ -48,6 +48,30 @@ class Logger {
     // Keep only the last maxLogs entries
     if (this.logs.length > this.maxLogs) {
       this.logs = this.logs.slice(-this.maxLogs);
+    }
+
+    // Only output to console in development
+    if (process.env.NODE_ENV !== 'production') {
+      const contextStr = context ? `[${context}] ` : '';
+      const dataStr = data ? ` | Data: ${JSON.stringify(data)}` : '';
+      const errorStr = error ? ` | Error: ${error.message}` : '';
+      
+      const logMessage = `${contextStr}${message}${dataStr}${errorStr}`;
+      
+      switch (level) {
+        case LogLevel.DEBUG:
+          console.debug(logMessage);
+          break;
+        case LogLevel.INFO:
+          console.info(logMessage);
+          break;
+        case LogLevel.WARN:
+          console.warn(logMessage);
+          break;
+        case LogLevel.ERROR:
+          console.error(logMessage);
+          break;
+      }
     }
   }
 

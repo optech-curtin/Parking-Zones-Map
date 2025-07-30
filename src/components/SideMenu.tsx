@@ -140,7 +140,7 @@ export default function SideMenu({
 
   // Calculate total closed bays across all bay types for filtered parking lots
   const totalClosedBays = React.useMemo(() => {
-    return Object.values(filteredClosedBayCounts).reduce((sum, count) => sum + count, 0);
+    return Object.values(filteredClosedBayCounts || {}).reduce((sum, count) => sum + count, 0);
   }, [filteredClosedBayCounts]);
 
   // Calculate total bays in cap (matching the baysInCap filter criteria)
@@ -159,7 +159,7 @@ export default function SideMenu({
     // Apply monitored carparks filter if active
     const counts = filters.monitoredCarparks ? monitoredBayCounts : totalBayCounts;
     
-    return Object.entries(counts)
+    return Object.entries(counts || {})
       .filter(([type]) => eligibleTypes.includes(type))
       .reduce((sum, [, count]) => sum + count, 0);
   }, [totalBayCounts, monitoredBayCounts, filters.paygZones, filters.monitoredCarparks]);
@@ -288,7 +288,7 @@ export default function SideMenu({
                     <div className="flex justify-between font-semibold text-[var(--text-primary)]">
                       <span>Total Bays</span>
                       <span>
-                        {filteredBayTypes.reduce((sum, [, count]) => sum + count, 0)}
+                        {filteredBayTypes?.reduce((sum, [, count]) => sum + count, 0) || 0}
                       </span>
                     </div>
                     <div className="flex justify-between font-semibold text-[var(--text-primary)]">

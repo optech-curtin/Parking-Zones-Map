@@ -889,8 +889,12 @@ export class MapService {
           .sort((a, b) => b.count - a.count);
       });
 
+
+
       this.featuresLoaded = true;
       logger.info('Feature loading and processing completed', 'MapService');
+      logger.info(`Total parking lots loaded: ${Object.keys(this.cachedParkingLotCounts).length}`, 'MapService');
+      logger.info(`Sample parking lots: ${Object.keys(this.cachedParkingLotCounts).slice(0, 5).join(', ')}`, 'MapService');
     } catch (error) {
       logger.error('Failed to load and process features', 'MapService', error instanceof Error ? error : undefined);
       throw new MapServiceError(
@@ -904,8 +908,11 @@ export class MapService {
     try {
       await this.loadAndProcessFeatures();
       const cleanedParkingLot = this.cleanString(parkingLot);
-      return this.cachedParkingLotCounts[cleanedParkingLot] || [];
+      const result = this.cachedParkingLotCounts[cleanedParkingLot] || [];
+              logger.debug(`getSelectedParkingLotBays - Parking lot: "${parkingLot}", Cleaned: "${cleanedParkingLot}", Result: ${JSON.stringify(result)}`, 'MapService');
+      return result;
     } catch (error) {
+      logger.error(`Failed to get bay counts for parking lot ${parkingLot}`, 'MapService', error instanceof Error ? error : undefined);
       throw new MapServiceError(
         `Failed to get bay counts for parking lot ${parkingLot}`,
         error instanceof Error ? error : undefined
@@ -1083,10 +1090,15 @@ export class MapService {
   // Add zoom change handler for layer optimization
   setupZoomOptimization(view: MapView): void {
     try {
-      // Disable automatic feature unloading during navigation
-      view.watch('zoom', (newZoom: number) => {
-        // No longer optimizing layer visibility based on zoom
-        logger.debug(`Zoom level changed to: ${newZoom}`, 'MapService');
+      // Import reactiveUtils for modern watch functionality
+      import('@arcgis/core/core/reactiveUtils').then(({ watch }) => {
+        // Use modern reactiveUtils.watch instead of deprecated view.watch
+        watch(() => view.zoom, (newZoom: number) => {
+          // No longer optimizing layer visibility based on zoom
+          logger.debug(`Zoom level changed to: ${newZoom}`, 'MapService');
+        });
+      }).catch((error) => {
+        logger.warn('Failed to import reactiveUtils for zoom watching', 'MapService', error instanceof Error ? error : undefined);
       });
 
       // Add event listeners to prevent unloading during navigation

@@ -55,8 +55,12 @@ export const ParkingProvider = ({ children }: { children: ReactNode }) => {
   // Memoized state setters to prevent unnecessary re-renders
   const setSelectedParkingLot = useCallback((parkingLot: string) => {
     try {
-      setState(prev => ({ ...prev, selectedParkingLot: parkingLot }));
-      logger.debug(`Selected parking lot: ${parkingLot}`, 'ParkingContext');
+              logger.debug(`Setting selected parking lot: ${parkingLot}`, 'ParkingContext');
+      setState(prev => {
+        const newState = { ...prev, selectedParkingLot: parkingLot };
+                  // logger.debug(`State updated - selectedParkingLot: ${newState.selectedParkingLot}`, 'ParkingContext');
+        return newState;
+      });
     } catch (error) {
       const contextError = new ContextError('Failed to set selected parking lot', error instanceof Error ? error : undefined);
       setState(prev => ({ ...prev, error: contextError }));
@@ -171,7 +175,12 @@ export const ParkingProvider = ({ children }: { children: ReactNode }) => {
 
   const setSelectedBayCounts = useCallback((counts: BayTypeCount[]) => {
     try {
-      setState(prev => ({ ...prev, selectedBayCounts: counts }));
+              logger.debug(`Setting selected bay counts: ${JSON.stringify(counts)}`, 'ParkingContext');
+      setState(prev => {
+        const newState = { ...prev, selectedBayCounts: counts };
+                  // logger.debug(`State updated - selectedBayCounts length: ${newState.selectedBayCounts.length}`, 'ParkingContext');
+        return newState;
+      });
     } catch (error) {
       const contextError = new ContextError('Failed to set selected bay counts', error instanceof Error ? error : undefined);
       setState(prev => ({ ...prev, error: contextError }));
