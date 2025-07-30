@@ -51,6 +51,8 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
     setSelectedClosedBayCounts,
     setTotalBayCounts,
     setMonitoredBayCounts,
+    setFilteredTotalBayCounts,
+    setFilteredMonitoredBayCounts,
     setIndividualBayClosedCounts,
     setError,
     setClosedBayCounts,
@@ -72,6 +74,8 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
     setSelectedClosedBayCounts,
     setTotalBayCounts,
     setMonitoredBayCounts,
+    setFilteredTotalBayCounts,
+    setFilteredMonitoredBayCounts,
     setIndividualBayClosedCounts,
     setError,
     setClosedBayCounts,
@@ -90,6 +94,8 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
     setSelectedClosedBayCounts,
     setTotalBayCounts,
     setMonitoredBayCounts,
+    setFilteredTotalBayCounts,
+    setFilteredMonitoredBayCounts,
     setIndividualBayClosedCounts,
     setError,
     setClosedBayCounts,
@@ -219,7 +225,8 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
         setSelectedBayTypeFilter(bayType);
         
         // Find parking lots with this bay type
-        const parkingLotsWithBayType = await mapServiceRef.current?.getParkingLotsWithBayType(bayType) || [];
+        // Filter out temporary parking lots when "Bays in Cap" filter is active
+        const parkingLotsWithBayType = await mapServiceRef.current?.getParkingLotsWithBayType(bayType, filters.baysInCap) || [];
         setParkingLotsWithSelectedBayType(parkingLotsWithBayType);
         
         // Apply filter to map layers
@@ -231,7 +238,7 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
     } finally {
       setIsBayTypeFilterLoading(false);
     }
-  }, [selectedBayTypeFilter, setError]);
+  }, [selectedBayTypeFilter, setError, filters.baysInCap]);
 
   // Optimized click handler with better performance
   const setupClickHandler = useCallback((view: __esri.MapView) => {
@@ -639,6 +646,8 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
       stateSetters.setBayTypeCounts(bayCounts);
       stateSetters.setTotalBayCounts(mapService.getTotalBayCounts());
       stateSetters.setMonitoredBayCounts(mapService.getMonitoredBayCounts());
+      stateSetters.setFilteredTotalBayCounts(mapService.getTotalBayCounts(true));
+      stateSetters.setFilteredMonitoredBayCounts(mapService.getMonitoredBayCounts(true));
       stateSetters.setIndividualBayClosedCounts(mapService.getIndividualBayClosedCounts());
       
       // Initialize closedBayCounts with individual bay closed counts
@@ -705,7 +714,13 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
         
         // Filter out temporary parking lots when baysInCap filter is active
         const filteredClosedZones = filters.baysInCap 
-          ? closedZones.filter(zone => !mapServiceRef.current?.isTemporaryParkingLot(zone))
+          ? closedZones.filter(zone => {
+              const isTemp = mapServiceRef.current?.isTemporaryParkingLot(zone);
+              if (isTemp) {
+                logger.debug(`Filtering out temporary parking lot: ${zone}`, 'useMap');
+              }
+              return !isTemp;
+            })
           : closedZones;
 
         // Helper to get outline color for a zone (bay type)
@@ -782,7 +797,16 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
             // Manually closed carparks (red overlay)
             ...Object.entries(carparkStatus)
               .filter(([, isClosed]) => isClosed)
-              .filter(([zone]) => !filters.baysInCap || !mapServiceRef.current?.isTemporaryParkingLot(zone))
+              .filter(([zone]) => {
+                if (filters.baysInCap) {
+                  const isTemp = mapServiceRef.current?.isTemporaryParkingLot(zone);
+                  if (isTemp) {
+                    logger.debug(`Filtering out manually closed temporary parking lot: ${zone}`, 'useMap');
+                  }
+                  return !isTemp;
+                }
+                return true;
+              })
               .map(([zone]) => ({
                 value: cleanZone(zone),
                 symbol: {
@@ -839,6 +863,50 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
       logger.error('Error updating bay layer filters', 'useMap', error instanceof Error ? error : undefined);
     }
   }, [selectedBayTypeFilter]);
+
+  // Update parking lots when "Bays in Cap" filter changes
+  useEffect(() => {
+    const updateParkingLotsForFilter = async () => {
+      if (selectedBayTypeFilter && mapServiceRef.current) {
+        try {
+          logger.debug(`Updating parking lots for bay type "${selectedBayTypeFilter}" with baysInCap filter: ${filters.baysInCap}`, 'useMap');
+          const parkingLotsWithBayType = await mapServiceRef.current.getParkingLotsWithBayType(selectedBayTypeFilter, filters.baysInCap);
+          logger.debug(`Found ${parkingLotsWithBayType.length} parking lots after filtering`, 'useMap');
+          setParkingLotsWithSelectedBayType(parkingLotsWithBayType);
+        } catch (error) {
+          logger.error('Error updating parking lots for filter change', 'useMap', error instanceof Error ? error : undefined);
+        }
+      }
+    };
+
+    updateParkingLotsForFilter();
+  }, [filters.baysInCap, selectedBayTypeFilter]);
+
+  // Update bay counts when "Bays in Cap" filter changes
+  useEffect(() => {
+    if (mapServiceRef.current) {
+      try {
+        logger.debug(`Updating bay counts with baysInCap filter: ${filters.baysInCap}`, 'useMap');
+        const totalBayCounts = mapServiceRef.current.getTotalBayCounts(filters.baysInCap);
+        const monitoredBayCounts = mapServiceRef.current.getMonitoredBayCounts(filters.baysInCap);
+        
+        logger.debug(`Total bay counts after filtering: ${JSON.stringify(totalBayCounts)}`, 'useMap');
+        logger.debug(`Monitored bay counts after filtering: ${JSON.stringify(monitoredBayCounts)}`, 'useMap');
+        
+        setTotalBayCounts(totalBayCounts);
+        setMonitoredBayCounts(monitoredBayCounts);
+        
+        // Also set the filtered counts for use in SideMenu
+        const filteredTotalBayCounts = mapServiceRef.current.getTotalBayCounts(true);
+        const filteredMonitoredBayCounts = mapServiceRef.current.getMonitoredBayCounts(true);
+        
+        setFilteredTotalBayCounts(filteredTotalBayCounts);
+        setFilteredMonitoredBayCounts(filteredMonitoredBayCounts);
+      } catch (error) {
+        logger.error('Error updating bay counts for filter change', 'useMap', error instanceof Error ? error : undefined);
+      }
+    }
+  }, [filters.baysInCap, setTotalBayCounts, setMonitoredBayCounts, setFilteredTotalBayCounts, setFilteredMonitoredBayCounts]);
 
   // Initialize bay renderers once (no longer need to update based on selection)
   useEffect(() => {

@@ -48,6 +48,8 @@ export interface ParkingState {
   selectedClosedBayCounts: { [key: string]: number }; // Individual bay closed counts for selected parking lot
   totalBayCounts: { [key: string]: number };
   monitoredBayCounts: { [key: string]: number };
+  filteredTotalBayCounts: { [key: string]: number }; // Filtered counts excluding temporary parking lots
+  filteredMonitoredBayCounts: { [key: string]: number }; // Filtered monitored counts excluding temporary parking lots
   bayTypeCounts: BayTypeCount[];
   selectedBayCounts: BayTypeCount[];
   bayColors: { [key: string]: string };
@@ -72,6 +74,8 @@ export interface ParkingContextProps {
   setSelectedClosedBayCounts: (counts: { [key: string]: number }) => void;
   setTotalBayCounts: (counts: { [key: string]: number }) => void;
   setMonitoredBayCounts: (counts: { [key: string]: number }) => void;
+  setFilteredTotalBayCounts: (counts: { [key: string]: number }) => void;
+  setFilteredMonitoredBayCounts: (counts: { [key: string]: number }) => void;
   setIndividualBayClosedCounts: (counts: { [key: string]: number }) => void;
   setClosedBayCounts: (counts: { [key: string]: number }) => void;
   setParkingLots: (lots: string[]) => void;

@@ -15,6 +15,8 @@ const initialState: ParkingState = {
   selectedClosedBayCounts: {},
   totalBayCounts: {},
   monitoredBayCounts: {},
+  filteredTotalBayCounts: {},
+  filteredMonitoredBayCounts: {},
   bayTypeCounts: [],
   selectedBayCounts: [],
   bayColors: {
@@ -220,6 +222,26 @@ export const ParkingProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
+  const setFilteredTotalBayCounts = useCallback((counts: { [key: string]: number }) => {
+    try {
+      setState(prev => ({ ...prev, filteredTotalBayCounts: counts }));
+    } catch (error) {
+      const contextError = new ContextError('Failed to set filtered total bay counts', error instanceof Error ? error : undefined);
+      setState(prev => ({ ...prev, error: contextError }));
+      logger.error('Failed to set filtered total bay counts', 'ParkingContext', error instanceof Error ? error : undefined);
+    }
+  }, []);
+
+  const setFilteredMonitoredBayCounts = useCallback((counts: { [key: string]: number }) => {
+    try {
+      setState(prev => ({ ...prev, filteredMonitoredBayCounts: counts }));
+    } catch (error) {
+      const contextError = new ContextError('Failed to set filtered monitored bay counts', error instanceof Error ? error : undefined);
+      setState(prev => ({ ...prev, error: contextError }));
+      logger.error('Failed to set filtered monitored bay counts', 'ParkingContext', error instanceof Error ? error : undefined);
+    }
+  }, []);
+
   const setParkingLots = useCallback((lots: string[]) => {
     try {
       setState(prev => ({ ...prev, parkingLots: lots }));
@@ -299,6 +321,8 @@ export const ParkingProvider = ({ children }: { children: ReactNode }) => {
     setSelectedClosedBayCounts,
     setTotalBayCounts,
     setMonitoredBayCounts,
+    setFilteredTotalBayCounts,
+    setFilteredMonitoredBayCounts,
     setIndividualBayClosedCounts,
     setClosedBayCounts,
     setParkingLots,
@@ -320,6 +344,8 @@ export const ParkingProvider = ({ children }: { children: ReactNode }) => {
     setSelectedClosedBayCounts,
     setTotalBayCounts,
     setMonitoredBayCounts,
+    setFilteredTotalBayCounts,
+    setFilteredMonitoredBayCounts,
     setIndividualBayClosedCounts,
     setClosedBayCounts,
     setParkingLots,

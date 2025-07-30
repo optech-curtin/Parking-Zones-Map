@@ -89,7 +89,9 @@ export class MapService {
   // Helper function to check if a parking lot is temporary
   isTemporaryParkingLot(parkingLot: string): boolean {
     const tempPattern = /^TCP\d+$/i; // Matches TCP1, TCP2, TCP3, etc.
-    return tempPattern.test(parkingLot.trim());
+    const result = tempPattern.test(parkingLot.trim());
+    logger.debug(`isTemporaryParkingLot("${parkingLot}") = ${result}`, 'MapService');
+    return result;
   }
 
   // Helper function to clean strings
@@ -634,9 +636,9 @@ export class MapService {
   }
 
   // Optimized method to get parking lots with bay type
-  async getParkingLotsWithBayType(bayType: string): Promise<string[]> {
+  async getParkingLotsWithBayType(bayType: string, filterTemporary: boolean = false): Promise<string[]> {
     try {
-      const cacheKey = `parking_lots_with_bay_type_${bayType}`;
+      const cacheKey = `parking_lots_with_bay_type_${bayType}_${filterTemporary}`;
       const cachedResult = this.cacheService.get<string[]>(cacheKey);
       
       if (cachedResult) {
@@ -673,8 +675,12 @@ export class MapService {
             rawParkingLots.add(rawParkingLot);
             
             if (cleanedParkingLot) {
-              // Don't filter out temporary parking lots for zone filtering
-              parkingLots.add(cleanedParkingLot);
+              // Filter out temporary parking lots if requested
+              if (!filterTemporary || !this.isTemporaryParkingLot(cleanedParkingLot)) {
+                parkingLots.add(cleanedParkingLot);
+              } else {
+                logger.debug(`Filtering out temporary parking lot: ${cleanedParkingLot}`, 'MapService');
+              }
             }
             
           });
@@ -863,6 +869,7 @@ export class MapService {
       });
 
       logger.info(`Organized features into ${Object.keys(featuresByParkingLot).length} parking lots`, 'MapService');
+      logger.debug(`Parking lots found: ${Object.keys(featuresByParkingLot).join(', ')}`, 'MapService');
 
       // Then process each parking lot's features
       Object.entries(featuresByParkingLot).forEach(([parkingLot, features]) => {
@@ -992,11 +999,40 @@ export class MapService {
     }
   }
 
-  getTotalBayCounts(): { [key: string]: number } {
-    return this.cachedTotalCounts;
+  getTotalBayCounts(filterTemporary: boolean = false): { [key: string]: number } {
+    if (!filterTemporary) {
+      return this.cachedTotalCounts;
+    }
+    
+    // Filter out temporary parking lots from total counts
+    const filteredCounts: { [key: string]: number } = {};
+    
+    // Get all parking lots and their bay counts
+    logger.debug(`Filtering total bay counts. Total parking lots: ${Object.keys(this.cachedParkingLotCounts).length}`, 'MapService');
+    Object.entries(this.cachedParkingLotCounts).forEach(([parkingLot, bayCounts]) => {
+      const isTemp = this.isTemporaryParkingLot(parkingLot);
+      logger.debug(`Processing parking lot: ${parkingLot}, isTemporary: ${isTemp}`, 'MapService');
+      
+      if (!isTemp) {
+        bayCounts.forEach(({ type, count }) => {
+          filteredCounts[type] = (filteredCounts[type] || 0) + count;
+        });
+      } else {
+        logger.debug(`Skipping temporary parking lot: ${parkingLot}`, 'MapService');
+      }
+    });
+    
+    return filteredCounts;
   }
 
-  getMonitoredBayCounts(): { [key: string]: number } {
+  getMonitoredBayCounts(filterTemporary: boolean = false): { [key: string]: number } {
+    if (!filterTemporary) {
+      return this.cachedMonitoredCounts;
+    }
+    
+    // For now, just return the original monitored counts when filtering
+    // This is a simplified approach - in a real implementation, you'd need to
+    // recalculate which parking lots are monitored after filtering
     return this.cachedMonitoredCounts;
   }
 

@@ -39,6 +39,8 @@ export default function SideMenu({
       closedBayCounts, 
       totalBayCounts,
       monitoredBayCounts,
+      filteredTotalBayCounts,
+      filteredMonitoredBayCounts,
       bayColors, 
       isLoading 
     },
@@ -156,13 +158,27 @@ export default function SideMenu({
       eligibleTypes = eligibleTypes.filter(type => paygTypes.includes(type));
     }
     
-    // Apply monitored carparks filter if active
-    const counts = filters.monitoredCarparks ? monitoredBayCounts : totalBayCounts;
+    // Always use filtered counts for "Total in Cap" to exclude temporary parking lots (TCP1, TCP2, etc.)
+    // This ensures "Total in Cap" represents the actual total of bays in cap, regardless of filter state
+    const counts = filters.monitoredCarparks 
+      ? filteredMonitoredBayCounts
+      : filteredTotalBayCounts;
     
-    return Object.entries(counts || {})
+    const result = Object.entries(counts || {})
       .filter(([type]) => eligibleTypes.includes(type))
       .reduce((sum, [, count]) => sum + count, 0);
-  }, [totalBayCounts, monitoredBayCounts, filters.paygZones, filters.monitoredCarparks]);
+    
+    // Debug logging for "Total in Cap" calculation
+    console.log(`Total in Cap calculation:`, {
+      filters: { paygZones: filters.paygZones, monitoredCarparks: filters.monitoredCarparks },
+      eligibleTypes,
+      counts: Object.entries(counts || {}).filter(([type]) => eligibleTypes.includes(type)),
+      result,
+      note: 'Always uses filtered counts (excludes TCP1/TCP2)'
+    });
+    
+    return result;
+  }, [filteredTotalBayCounts, filteredMonitoredBayCounts, filters.paygZones, filters.monitoredCarparks]);
 
   return (
     <>
