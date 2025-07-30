@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode, useCallback, useMemo } from 'react';
-import { ParkingState, ParkingContextProps, BayTypeCount, BayFeatureAttributes } from '../types';
+import { ParkingState, ParkingContextProps, BayTypeCount, BayFeatureAttributes, LoadingProgress } from '../types';
 import { ContextError } from '../utils/errors';
 import { logger } from '../utils/logger';
 
@@ -44,7 +44,13 @@ const initialState: ParkingState = {
   parkingLots: [],
   monitoredCarparks: [],
   isLoading: true,
-  error: null
+  error: null,
+  // Enhanced loading state
+  loadingProgress: {
+    phase: 'initializing',
+    progress: 0,
+    message: 'Initializing application...'
+  }
 };
 
 const ParkingContext = createContext<ParkingContextProps | undefined>(undefined);
@@ -55,10 +61,8 @@ export const ParkingProvider = ({ children }: { children: ReactNode }) => {
   // Memoized state setters to prevent unnecessary re-renders
   const setSelectedParkingLot = useCallback((parkingLot: string) => {
     try {
-              logger.debug(`Setting selected parking lot: ${parkingLot}`, 'ParkingContext');
       setState(prev => {
         const newState = { ...prev, selectedParkingLot: parkingLot };
-                  // logger.debug(`State updated - selectedParkingLot: ${newState.selectedParkingLot}`, 'ParkingContext');
         return newState;
       });
     } catch (error) {
@@ -175,10 +179,8 @@ export const ParkingProvider = ({ children }: { children: ReactNode }) => {
 
   const setSelectedBayCounts = useCallback((counts: BayTypeCount[]) => {
     try {
-              logger.debug(`Setting selected bay counts: ${JSON.stringify(counts)}`, 'ParkingContext');
       setState(prev => {
         const newState = { ...prev, selectedBayCounts: counts };
-                  // logger.debug(`State updated - selectedBayCounts length: ${newState.selectedBayCounts.length}`, 'ParkingContext');
         return newState;
       });
     } catch (error) {
@@ -252,6 +254,16 @@ export const ParkingProvider = ({ children }: { children: ReactNode }) => {
     setState(prev => ({ ...prev, error }));
   }, []);
 
+  const setLoadingProgress = useCallback((progress: LoadingProgress) => {
+    try {
+      setState(prev => ({ ...prev, loadingProgress: progress }));
+    } catch (error) {
+      const contextError = new ContextError('Failed to set loading progress', error instanceof Error ? error : undefined);
+      setState(prev => ({ ...prev, error: contextError }));
+      logger.error('Failed to set loading progress', 'ParkingContext', error instanceof Error ? error : undefined);
+    }
+  }, []);
+
   const setIndividualBayClosedCounts = useCallback((counts: { [key: string]: number }) => {
     try {
       setState(prev => ({ ...prev, individualBayClosedCounts: counts }));
@@ -292,7 +304,8 @@ export const ParkingProvider = ({ children }: { children: ReactNode }) => {
     setParkingLots,
     setMonitoredCarparks,
     setIsLoading,
-    setError
+    setError,
+    setLoadingProgress
   }), [
     state,
     setSelectedParkingLot,
@@ -312,7 +325,8 @@ export const ParkingProvider = ({ children }: { children: ReactNode }) => {
     setParkingLots,
     setMonitoredCarparks,
     setIsLoading,
-    setError
+    setError,
+    setLoadingProgress
   ]);
 
   return (

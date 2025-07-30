@@ -27,6 +27,14 @@ export interface ParkingLotCount {
   };
 }
 
+// Enhanced loading state interface
+export interface LoadingProgress {
+  phase: 'initializing' | 'authenticating' | 'loading-map' | 'loading-layers' | 'loading-data' | 'preloading' | 'complete';
+  progress: number; // 0-100
+  message: string;
+  details?: string;
+}
+
 // Context state interfaces
 export interface ParkingState {
   selectedParkingLot: string;
@@ -47,6 +55,7 @@ export interface ParkingState {
   monitoredCarparks: string[];
   isLoading: boolean;
   error: Error | null;
+  loadingProgress: LoadingProgress; // Enhanced loading state
 }
 
 export interface ParkingContextProps {
@@ -69,6 +78,7 @@ export interface ParkingContextProps {
   setMonitoredCarparks: (carparks: string[]) => void;
   setIsLoading: (loading: boolean) => void;
   setError: (error: Error | null) => void;
+  setLoadingProgress: (progress: LoadingProgress) => void; // Enhanced loading progress
 }
 
 // Component prop interfaces

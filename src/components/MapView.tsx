@@ -1,20 +1,36 @@
 'use client';
 
-import React from 'react';
+import React, { useRef } from 'react';
 import { LazyParkingInfoTable, LazySideMenu, LazySearchMenu } from './LazyComponents';
 import { useParking } from '../context/ParkingContext';
 import { useMap } from '../hooks/useMap';
 import { ErrorBoundary } from './ErrorBoundary';
+import LoadingScreen from './LoadingScreen';
 
-export default function MapViewComponent() {
+interface MapViewComponentProps {
+  authProgress?: {
+    phase: 'initializing' | 'authenticating' | 'loading-map';
+    progress: number;
+    message: string;
+  };
+}
+
+export default function MapViewComponent({ authProgress }: MapViewComponentProps) {
+  const mapDivRef = useRef<HTMLDivElement>(null);
+  
   const { 
     state: { 
-      parkingLots
+      parkingLots,
+      isLoading,
+      loadingProgress
     }
   } = useParking();
 
+  // Combine authentication and map loading states
+  const isCombinedLoading = isLoading || (authProgress && authProgress.progress < 100);
+  const combinedProgress = isLoading ? loadingProgress : (authProgress || { phase: 'initializing', progress: 0, message: 'Loading...' });
+
   const {
-    mapDivRef,
     isMenuOpen,
     toggleMenu,
     isZoneInfoMinimized,
@@ -28,34 +44,44 @@ export default function MapViewComponent() {
     parkingLotsWithSelectedBayType,
     isBayTypeFilterLoading,
     handleSelectParkingLot
-  } = useMap();
+  } = useMap(mapDivRef);
 
   return (
     <ErrorBoundary>
       <div className="relative w-full h-screen">
-        <LazySearchMenu
-          parkingLots={parkingLots}
-          onSelectParkingLot={handleSelectParkingLot}
-          isZoneInfoMinimized={isZoneInfoMinimized}
-          isFilterOpen={isFilterOpen}
-          isMenuOpen={isMenuOpen}
-        />
-        <LazySideMenu
-          isOpen={isMenuOpen}
-          onToggleMenu={toggleMenu}
-          isZoneInfoMinimized={isZoneInfoMinimized}
-          setIsZoneInfoMinimized={toggleZoneInfo}
-          isFilterOpen={isFilterOpen}
-          setIsFilterOpen={toggleFilter}
-          filters={filters}
-          setFilters={setFilters}
-          selectedBayTypeFilter={selectedBayTypeFilter}
-          handleBayTypeSelect={handleBayTypeSelect}
-          parkingLotsWithSelectedBayType={parkingLotsWithSelectedBayType}
-          isBayTypeFilterLoading={isBayTypeFilterLoading}
-        />
+        {/* Always render the map div so ref is available */}
         <div ref={mapDivRef} className="w-full h-screen" />
-        <LazyParkingInfoTable filters={filters} />
+        
+        {/* Show loading screen as overlay if still loading */}
+        {isCombinedLoading && <LoadingScreen progress={combinedProgress} />}
+        
+        {/* Only show UI components when not loading */}
+        {!isCombinedLoading && (
+          <>
+            <LazySearchMenu
+              parkingLots={parkingLots}
+              onSelectParkingLot={handleSelectParkingLot}
+              isZoneInfoMinimized={isZoneInfoMinimized}
+              isFilterOpen={isFilterOpen}
+              isMenuOpen={isMenuOpen}
+            />
+            <LazySideMenu
+              isOpen={isMenuOpen}
+              onToggleMenu={toggleMenu}
+              isZoneInfoMinimized={isZoneInfoMinimized}
+              setIsZoneInfoMinimized={toggleZoneInfo}
+              isFilterOpen={isFilterOpen}
+              setIsFilterOpen={toggleFilter}
+              filters={filters}
+              setFilters={setFilters}
+              selectedBayTypeFilter={selectedBayTypeFilter}
+              handleBayTypeSelect={handleBayTypeSelect}
+              parkingLotsWithSelectedBayType={parkingLotsWithSelectedBayType}
+              isBayTypeFilterLoading={isBayTypeFilterLoading}
+            />
+            <LazyParkingInfoTable filters={filters} />
+          </>
+        )}
       </div>
     </ErrorBoundary>
   );

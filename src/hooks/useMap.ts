@@ -1,19 +1,20 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo, useLayoutEffect } from 'react';
 import { MapService } from '../services/MapService';
 import { useParking } from '../context/ParkingContext';
 import FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import type { ParkingFeatureAttributes, BayFeatureAttributes } from '../types';
 import { debounce } from '../utils/debounce';
 import { logger } from '../utils/logger';
+import { performanceMonitor } from '../utils/performance';
 
 const PARKING_LAYER_URL = "https://arcgis.curtin.edu.au/arcgis/rest/services/ParKam/ParKam/FeatureServer/4";
 
-export function useMap() {
-  const mapDivRef = useRef<HTMLDivElement>(null);
+export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
   const mapServiceRef = useRef<MapService | null>(null);
   const bayHighlightGraphicRef = useRef<__esri.Graphic | null>(null);
   const isInitializedRef = useRef(false);
   const clickHandlerRef = useRef<__esri.Handle | null>(null);
+  const [isRefReady, setIsRefReady] = useState(false);
   
   // UI State
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -52,7 +53,8 @@ export function useMap() {
     setMonitoredBayCounts,
     setIndividualBayClosedCounts,
     setError,
-    setClosedBayCounts
+    setClosedBayCounts,
+    setLoadingProgress
   } = useParking();
 
   // Memoized state setters to prevent unnecessary re-renders
@@ -72,7 +74,8 @@ export function useMap() {
     setMonitoredBayCounts,
     setIndividualBayClosedCounts,
     setError,
-    setClosedBayCounts
+    setClosedBayCounts,
+    setLoadingProgress
   }), [
     setSelectedParkingLot,
     setHighlightedParkingLot,
@@ -89,7 +92,8 @@ export function useMap() {
     setMonitoredBayCounts,
     setIndividualBayClosedCounts,
     setError,
-    setClosedBayCounts
+    setClosedBayCounts,
+    setLoadingProgress
   ]);
 
   // Memoized UI state handlers
@@ -241,6 +245,10 @@ export function useMap() {
     // Create optimized click handler
     clickHandlerRef.current = view.on('click', async (event) => {
       logger.info('Click event received', 'useMap');
+      
+      // Start pan/zoom performance timer
+      performanceMonitor.startTimer('pan-zoom');
+      
       try {
         const parkingLayer = mapServiceRef.current?.getParkingLayer();
         const underBaysLayer = mapServiceRef.current?.getUnderBaysLayer();
@@ -482,6 +490,10 @@ export function useMap() {
         }
       } catch (error) {
         logger.error('Error in click handler', 'useMap', error instanceof Error ? error : undefined);
+      } finally {
+        // Record pan/zoom performance time
+        const panZoomTime = performanceMonitor.endTimer('pan-zoom');
+        performanceMonitor.recordPanZoomTime(panZoomTime);
       }
     });
   }, [setSelectedBay, setHighlightedBay, setSelectedBayAttributes, setHighlightedParkingLot, setSelectedParkingLot, setSelectedBayCounts, setSelectedClosedBayCounts, highlightBayWithGeometry]);
@@ -493,19 +505,18 @@ export function useMap() {
       return;
     }
 
-    const {
-      setParkingLots,
-      setMonitoredCarparks,
-      setBayTypeCounts,
-      setTotalBayCounts,
-      setMonitoredBayCounts,
-      setIndividualBayClosedCounts,
-
-      setClosedBayCounts
-    } = stateSetters;
-
     try {
       setIsLoading(true);
+      
+      // Start performance monitoring
+      performanceMonitor.startTimer('total-initialization');
+      
+      // Update loading progress
+      setLoadingProgress({
+        phase: 'loading-map',
+        progress: 10,
+        message: 'Initializing map service...'
+      });
       
       // Check environment variables
       const webmapId = process.env.NEXT_PUBLIC_ARCGIS_WEBMAP_ID;
@@ -523,17 +534,45 @@ export function useMap() {
 
       logger.info('Initializing map service', 'useMap');
 
+      setLoadingProgress({
+        phase: 'loading-map',
+        progress: 20,
+        message: 'Creating map service...'
+      });
+
+      // Start map initialization timer
+      performanceMonitor.startTimer('map-initialization');
+
       // Initialize map service
       logger.debug('Creating new MapService instance', 'useMap');
       const mapService = new MapService();
       mapServiceRef.current = mapService;
       logger.debug('MapService instance created successfully', 'useMap');
 
+      setLoadingProgress({
+        phase: 'loading-map',
+        progress: 30,
+        message: 'Initializing map view...'
+      });
+
       // Initialize the map
       if (!mapDivRef.current) {
         throw new Error('Map container ref is not available');
       }
       const view = await mapService.initializeMap(mapDivRef.current);
+      
+      // Record map initialization time
+      const mapInitTime = performanceMonitor.endTimer('map-initialization');
+      performanceMonitor.recordMapInitializationTime(mapInitTime);
+
+      setLoadingProgress({
+        phase: 'loading-layers',
+        progress: 40,
+        message: 'Loading map layers...'
+      });
+
+      // Start layer loading timer
+      performanceMonitor.startTimer('layer-loading');
 
       // Load and process features in parallel
       const [featuresPromise, bayFieldsPromise, testFilterPromise] = await Promise.allSettled([
@@ -541,6 +580,10 @@ export function useMap() {
         mapService.verifyBayLayerFields(),
         mapService.testBayTypeFiltering('Green')
       ]);
+      
+      // Record layer loading time
+      const layerLoadTime = performanceMonitor.endTimer('layer-loading');
+      performanceMonitor.recordLayerLoadTime(layerLoadTime);
 
       // Handle any errors from parallel operations
       if (featuresPromise.status === 'rejected') {
@@ -553,8 +596,31 @@ export function useMap() {
         logger.warn('Failed to test bay filtering', 'useMap', testFilterPromise.reason);
       }
 
+      setLoadingProgress({
+        phase: 'preloading',
+        progress: 60,
+        message: 'Preloading map data...',
+        details: 'Caching features for smooth navigation'
+      });
+
+      // Start preloading timer
+      performanceMonitor.startTimer('preloading');
+
       // Preload all features to prevent unloading issues
       await mapService.preloadAllFeatures();
+      
+      // Record preloading time
+      const preloadTime = performanceMonitor.endTimer('preloading');
+      performanceMonitor.recordPreloadTime(preloadTime);
+
+      setLoadingProgress({
+        phase: 'loading-data',
+        progress: 70,
+        message: 'Loading parking data...'
+      });
+
+      // Start data loading timer
+      performanceMonitor.startTimer('data-loading');
 
       // Get all required data in parallel
       const [lots, monitoredCarparks, bayCounts] = await Promise.all([
@@ -562,17 +628,27 @@ export function useMap() {
         mapService.getMonitoredCarparks(),
         mapService.getBayCounts()
       ]);
+      
+      // Record data loading time
+      const dataLoadTime = performanceMonitor.endTimer('data-loading');
+      performanceMonitor.recordDataLoadTime(dataLoadTime);
 
       // Update all state in a single batch
-      setParkingLots(lots);
-      setMonitoredCarparks(monitoredCarparks);
-      setBayTypeCounts(bayCounts);
-      setTotalBayCounts(mapService.getTotalBayCounts());
-      setMonitoredBayCounts(mapService.getMonitoredBayCounts());
-      setIndividualBayClosedCounts(mapService.getIndividualBayClosedCounts());
+      stateSetters.setParkingLots(lots);
+      stateSetters.setMonitoredCarparks(monitoredCarparks);
+      stateSetters.setBayTypeCounts(bayCounts);
+      stateSetters.setTotalBayCounts(mapService.getTotalBayCounts());
+      stateSetters.setMonitoredBayCounts(mapService.getMonitoredBayCounts());
+      stateSetters.setIndividualBayClosedCounts(mapService.getIndividualBayClosedCounts());
       
       // Initialize closedBayCounts with individual bay closed counts
-      setClosedBayCounts(mapService.getIndividualBayClosedCounts());
+      stateSetters.setClosedBayCounts(mapService.getIndividualBayClosedCounts());
+
+      setLoadingProgress({
+        phase: 'loading-data',
+        progress: 90,
+        message: 'Setting up map interactions...'
+      });
 
       // Set up optimized click handler
       logger.info('Setting up click handler', 'useMap');
@@ -582,16 +658,32 @@ export function useMap() {
       isInitializedRef.current = true;
       logger.info('Map initialization completed', 'useMap');
 
+      setLoadingProgress({
+        phase: 'complete',
+        progress: 100,
+        message: 'Map ready!'
+      });
+
+      // Record total initialization time and log performance summary
+      const totalTime = performanceMonitor.endTimer('total-initialization');
+      performanceMonitor.recordTotalLoadTime(totalTime);
+      performanceMonitor.logPerformanceSummary();
+
     } catch (error) {
       logger.error('Failed to initialize map', 'useMap', error instanceof Error ? error : undefined);
       setError(error instanceof Error ? error : new Error('Failed to initialize map'));
     } finally {
       setIsLoading(false);
     }
-  }, [stateSetters, setIsLoading, setError, setupClickHandler]);
+  }, [stateSetters, setIsLoading, setError, setupClickHandler, mapDivRef, setLoadingProgress]);
 
   // Update renderer when carpark status, highlight, or monitored filter changes
   useEffect(() => {
+    // Only run if map is initialized
+    if (!isInitializedRef.current) {
+      return;
+    }
+
     const view = mapServiceRef.current?.getView();
     const parkingLayer = mapServiceRef.current?.getParkingLayer();
     
@@ -726,6 +818,11 @@ export function useMap() {
 
   // Update bay layer filters when selected bay type changes
   useEffect(() => {
+    // Only run if map is initialized
+    if (!isInitializedRef.current) {
+      return;
+    }
+
     try {
       const mapService = mapServiceRef.current;
       if (!mapService) {
@@ -745,6 +842,11 @@ export function useMap() {
 
   // Initialize bay renderers once (no longer need to update based on selection)
   useEffect(() => {
+    // Only run if map is initialized
+    if (!isInitializedRef.current) {
+      return;
+    }
+
     const underBaysLayer = mapServiceRef.current?.getUnderBaysLayer();
     const baysLayer = mapServiceRef.current?.getBaysLayer();
     
@@ -790,15 +892,27 @@ export function useMap() {
     initializeBayRenderers();
   }, []); // Only run once on initialization
 
+  // Set ref ready when mapDivRef becomes available - use useLayoutEffect for synchronous execution
+  useLayoutEffect(() => {
+    if (mapDivRef.current && !isRefReady) {
+      logger.debug('Map container ref is now available', 'useMap');
+      setIsRefReady(true);
+    }
+  }, [mapDivRef, isRefReady]); // Add dependencies to prevent infinite updates
+
   // Initialize map and load initial data
   useEffect(() => {
-    if (!mapDivRef.current) {
-      logger.debug('Map container ref not available yet', 'useMap');
+    if (!isRefReady || !mapDivRef.current) {
+      logger.debug('Map container ref not ready yet', 'useMap');
       return;
     }
 
-    initializeMapAndData();
-  }, [initializeMapAndData]);
+    // Only initialize once
+    if (!isInitializedRef.current) {
+      logger.debug('Starting map initialization', 'useMap');
+      initializeMapAndData();
+    }
+  }, [isRefReady, mapDivRef, initializeMapAndData]); // Add missing dependencies
 
   // Cleanup effect
   useEffect(() => {
@@ -819,7 +933,6 @@ export function useMap() {
   }, []);
 
   return {
-    mapDivRef,
     isMenuOpen,
     toggleMenu,
     isZoneInfoMinimized,

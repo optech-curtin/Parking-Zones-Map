@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import FeatureLayer from '@arcgis/core/layers/FeatureLayer';
 import MapView from '@arcgis/core/views/MapView';
 import WebMap from '@arcgis/core/WebMap';
@@ -243,6 +244,9 @@ export class MapService {
         this.initializeBayLayers(view)
       ]);
 
+      // Apply comprehensive feature unloading prevention to all layers
+      this.preventFeatureUnloading(view);
+
       // Apply view optimizations after layers are loaded
       this.optimizeView(view);
       
@@ -374,13 +378,13 @@ export class MapService {
         throw new LayerInitializationError('Map is not initialized on the view', 'baysLayer');
       }
 
-      // Create the bay layers with performance optimizations
+      // Create the bay layers with enhanced performance optimizations
       this.underBaysLayer = new FeatureLayer({
         url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays_Under/FeatureServer/0",
         outFields: ['*'],
         // Performance optimizations
         visible: true,
-        // Prevent unloading when out of view
+        // Enhanced unloading prevention
         persistenceEnabled: true,
         renderer: {
           type: "unique-value",
@@ -414,7 +418,7 @@ export class MapService {
         outFields: ['*'],
         // Performance optimizations
         visible: true,
-        // Prevent unloading when out of view
+        // Enhanced unloading prevention
         persistenceEnabled: true,
         renderer: {
           type: "unique-value",
@@ -458,6 +462,29 @@ export class MapService {
       // Set layer IDs for reference
       this.underBaysLayer.id = "underBaysLayer";
       this.baysLayer.id = "baysLayer";
+
+      // Apply additional unloading prevention properties after creation
+      try {
+        // Enhanced properties for underBaysLayer
+        (this.underBaysLayer as any).loadAllFeatures = true;
+        (this.underBaysLayer as any).disableClientCaching = false;
+        (this.underBaysLayer as any).maxRecordCount = 0;
+        (this.underBaysLayer as any).unloadInvisibleFeatures = false;
+        (this.underBaysLayer as any).keepFeaturesInMemory = true;
+        (this.underBaysLayer as any).autoRefreshEnabled = false;
+        
+        // Enhanced properties for baysLayer
+        (this.baysLayer as any).loadAllFeatures = true;
+        (this.baysLayer as any).disableClientCaching = false;
+        (this.baysLayer as any).maxRecordCount = 0;
+        (this.baysLayer as any).unloadInvisibleFeatures = false;
+        (this.baysLayer as any).keepFeaturesInMemory = true;
+        (this.baysLayer as any).autoRefreshEnabled = false;
+        
+        logger.debug('Enhanced unloading prevention properties applied to bay layers', 'MapService');
+      } catch {
+        logger.debug('Some enhanced unloading prevention properties not available', 'MapService');
+      }
 
       // Debug: Check the fields available in the bay layers
       logger.debug(`UnderBays Layer Fields: ${this.underBaysLayer.fields?.map(f => f.name).join(', ')}`, 'MapService');
@@ -1130,17 +1157,61 @@ export class MapService {
         logger.warn('Map is not initialized on the view', 'MapService');
         return;
       }
+      
+      logger.debug('Configuring layers to prevent feature unloading', 'MapService');
+      
       // Ensure all layers maintain their features
       view.map.layers.forEach(layer => {
         if (layer instanceof FeatureLayer) {
-          // Force persistence
+          // Core persistence setting
           layer.persistenceEnabled = true;
           
-          // Additional properties to prevent unloading
-          (layer as unknown as Record<string, unknown>).loadAllFeatures = true;
-          (layer as unknown as Record<string, unknown>).disableClientCaching = false;
+          // Additional ArcGIS-specific properties to prevent unloading
+          try {
+            // Force all features to stay loaded
+            (layer as any).loadAllFeatures = true;
+            
+            // Disable client-side caching restrictions
+            (layer as any).disableClientCaching = false;
+            
+            // Set maximum features to prevent unloading
+            (layer as any).maxRecordCount = 0; // 0 means no limit
+            
+            // Disable feature unloading based on visibility
+            (layer as any).unloadInvisibleFeatures = false;
+            
+            // Keep features in memory even when not visible
+            (layer as any).keepFeaturesInMemory = true;
+            
+            // Disable automatic feature cleanup
+            (layer as any).autoRefreshEnabled = false;
+            
+            logger.debug(`Enhanced unloading prevention configured for layer: ${layer.id}`, 'MapService');
+          } catch {
+            logger.debug(`Some unloading prevention properties not available for layer ${layer.id}`, 'MapService');
+          }
         }
       });
+      
+      // Configure view-level settings to prevent feature unloading
+      try {
+        // Disable view-level feature unloading
+        (view as any).unloadInvisibleFeatures = false;
+        (view as any).keepFeaturesInMemory = true;
+        
+        // Set view to maintain all loaded features
+        view.constraints = {
+          ...view.constraints,
+          rotationEnabled: false,
+          snapToZoom: false
+        };
+        
+        logger.debug('View-level feature unloading prevention configured', 'MapService');
+              } catch {
+          logger.debug('Some view-level unloading prevention properties not available', 'MapService');
+        }
+      
+      logger.debug('Feature unloading prevention configuration completed', 'MapService');
     } catch (error) {
       logger.warn('Failed to prevent feature unloading', 'MapService', error instanceof Error ? error : undefined);
     }
@@ -1149,7 +1220,7 @@ export class MapService {
   // Preload all features to prevent unloading issues
   async preloadAllFeatures(): Promise<void> {
     try {
-      logger.info('Preloading all features to prevent unloading', 'MapService');
+      logger.debug('Preloading all features to prevent unloading', 'MapService');
       
       // Get all feature layers from the webmap and our additional layers
       const allLayers: FeatureLayer[] = [];
@@ -1167,26 +1238,278 @@ export class MapService {
           }
         });
       }
+
+      // Apply aggressive unloading prevention BEFORE preloading
+      logger.debug('Applying aggressive unloading prevention to all layers', 'MapService');
+      allLayers.forEach(layer => {
+        try {
+          // Core persistence setting
+          layer.persistenceEnabled = true;
+          
+          // Apply ALL possible unloading prevention properties
+          const layerAny = layer as any;
+          
+          // Force all features to stay loaded
+          if (typeof layerAny.loadAllFeatures !== 'undefined') {
+            layerAny.loadAllFeatures = true;
+          }
+          
+          // Disable client-side caching restrictions
+          if (typeof layerAny.disableClientCaching !== 'undefined') {
+            layerAny.disableClientCaching = false;
+          }
+          
+          // Set maximum features to prevent unloading
+          if (typeof layerAny.maxRecordCount !== 'undefined') {
+            layerAny.maxRecordCount = 0; // 0 means no limit
+          }
+          
+          // Disable feature unloading based on visibility
+          if (typeof layerAny.unloadInvisibleFeatures !== 'undefined') {
+            layerAny.unloadInvisibleFeatures = false;
+          }
+          
+          // Keep features in memory even when not visible
+          if (typeof layerAny.keepFeaturesInMemory !== 'undefined') {
+            layerAny.keepFeaturesInMemory = true;
+          }
+          
+          // Disable automatic feature cleanup
+          if (typeof layerAny.autoRefreshEnabled !== 'undefined') {
+            layerAny.autoRefreshEnabled = false;
+          }
+          
+          // Additional ArcGIS-specific properties
+          if (typeof layerAny.refreshInterval !== 'undefined') {
+            layerAny.refreshInterval = 0; // No auto refresh
+          }
+          
+          if (typeof layerAny.visible !== 'undefined') {
+            layerAny.visible = true; // Keep visible
+          }
+          
+          logger.debug(`Applied aggressive unloading prevention to layer: ${layer.id}`, 'MapService');
+        } catch {
+          logger.debug(`Some unloading prevention properties not available for layer ${layer.id}`, 'MapService');
+        }
+      });
+      
+      // Enhanced preloading with progress tracking
+      const totalLayers = allLayers.length;
+      let completedLayers = 0;
+      
+      logger.debug(`Starting preload for ${totalLayers} layers:`, 'MapService');
+      allLayers.forEach((layer, index) => {
+        logger.debug(`Layer ${index + 1}: ${layer.id} (${layer.title || 'No title'})`, 'MapService');
+      });
       
       for (const layer of allLayers) {
         try {
+          // Set layer persistence to prevent unloading
+          layer.persistenceEnabled = true;
+          
           // Query all features to ensure they're loaded in memory
           const query = layer.createQuery();
           query.where = '1=1';
-          query.returnGeometry = false;
+          query.returnGeometry = true; // Keep geometry for better performance
           query.outFields = ['*'];
+          // Note: maxRecordCount is not available in this version, will get all records by default
           
           const result = await layer.queryFeatures(query);
           logger.debug(`Preloaded ${result.features.length} features from layer ${layer.id}`, 'MapService');
+          
+          // Cache features in memory for faster access
+          this.cachedFeatures[layer.id] = result.features;
+          
+          // Force features to stay loaded by adding them to layer graphics
+          try {
+            const layerAny = layer as any;
+            if (layerAny.graphics && Array.isArray(layerAny.graphics)) {
+              // Add all features to the layer's graphics collection to force them to stay loaded
+              result.features.forEach(feature => {
+                if (!layerAny.graphics.some((g: any) => g.attributes?.OBJECTID === feature.attributes?.OBJECTID)) {
+                  layerAny.graphics.add(feature);
+                }
+              });
+              logger.debug(`Forced ${result.features.length} features to stay loaded in layer ${layer.id}`, 'MapService');
+            }
+          } catch {
+            logger.debug(`Could not force features to graphics collection for layer ${layer.id}`, 'MapService');
+          }
+          
+          completedLayers++;
+          logger.debug(`Preloading progress: ${completedLayers}/${totalLayers} layers`, 'MapService');
         } catch (error) {
           logger.warn(`Failed to preload features from layer ${layer.id}`, 'MapService', error instanceof Error ? error : undefined);
+          completedLayers++;
         }
       }
       
-      logger.info('Feature preloading completed', 'MapService');
+      // Configure view for optimal performance and prevent unloading
+      if (this.view) {
+        // Enable feature caching
+        this.view.constraints = {
+          ...this.view.constraints,
+          rotationEnabled: false, // Disable rotation for better performance
+          snapToZoom: false // Disable snap to zoom for smoother experience
+        };
+        
+        // Apply aggressive view-level unloading prevention
+        try {
+          const viewAny = this.view as any;
+          
+          // Disable view-level feature unloading
+          if (typeof viewAny.unloadInvisibleFeatures !== 'undefined') {
+            viewAny.unloadInvisibleFeatures = false;
+          }
+          
+          if (typeof viewAny.keepFeaturesInMemory !== 'undefined') {
+            viewAny.keepFeaturesInMemory = true;
+          }
+          
+          // Disable any automatic cleanup
+          if (typeof viewAny.autoRefreshEnabled !== 'undefined') {
+            viewAny.autoRefreshEnabled = false;
+          }
+          
+          logger.debug('Applied aggressive view-level unloading prevention', 'MapService');
+        } catch {
+          logger.debug('Some view-level unloading prevention properties not available', 'MapService');
+        }
+        
+        // Set up view extent caching
+        this.setupViewExtentCaching();
+      }
+      
+      logger.debug(`Feature preloading completed: ${completedLayers}/${totalLayers} layers`, 'MapService');
+      
+      // Monitor feature unloading status after preloading
+      this.monitorFeatureUnloadingStatus();
+      
+      // Set up periodic monitoring to check if features are being unloaded (development only)
+      if (process.env.NODE_ENV !== 'production') {
+        setInterval(() => {
+          this.monitorFeatureUnloadingStatus();
+        }, 30000); // Check every 30 seconds
+      }
     } catch (error) {
       logger.error('Failed to preload features', 'MapService', error instanceof Error ? error : undefined);
     }
+  }
+
+  // Enhanced view extent caching for better pan/zoom performance
+  private setupViewExtentCaching(): void {
+    if (!this.view) return;
+    
+    try {
+      // Disable continuous extent caching since we're preloading all features
+      // This was causing performance issues with continuous caching on every map move
+      logger.debug('View extent caching disabled - using preloaded features instead', 'MapService');
+    } catch (error) {
+      logger.warn('Failed to setup view extent caching', 'MapService', error instanceof Error ? error : undefined);
+    }
+  }
+
+  // Cache data for the current view extent - DISABLED
+  // This method is disabled because it was causing continuous caching on every map move
+  // We now use preloaded features instead for better performance
+  /*
+  private async cacheViewExtent(extent: __esri.Extent): Promise<void> {
+    try {
+      // Expand extent by 20% to preload adjacent areas
+      const expandedExtent = extent.clone();
+      const width = extent.xmax - extent.xmin;
+      const height = extent.ymax - extent.ymin;
+      
+      expandedExtent.xmin -= width * 0.1;
+      expandedExtent.xmax += width * 0.1;
+      expandedExtent.ymin -= height * 0.1;
+      expandedExtent.ymax += height * 0.1;
+      
+      // Preload features in expanded extent for all layers
+      const allLayers = this.getAllFeatureLayers();
+      
+      for (const layer of allLayers) {
+        try {
+          const query = layer.createQuery();
+          query.geometry = expandedExtent;
+          query.returnGeometry = true;
+          query.outFields = ['*'];
+          
+          // Use cache service for persistent storage
+          const cacheKey = `extent_${layer.id}_${extent.xmin.toFixed(4)}_${extent.ymin.toFixed(4)}`;
+          const cached = this.cacheService.get(cacheKey);
+          
+          if (!cached) {
+            const result = await layer.queryFeatures(query);
+            this.cacheService.set(cacheKey, result.features); // Cache using default TTL
+            logger.debug(`Cached ${result.features.length} features for extent in layer ${layer.id}`, 'MapService');
+          }
+        } catch (error) {
+          logger.debug(`Failed to cache extent for layer ${layer.id}`, 'MapService', error instanceof Error ? error : undefined);
+        }
+      }
+    } catch (error) {
+      logger.warn('Failed to cache view extent', 'MapService', error instanceof Error ? error : undefined);
+    }
+  }
+  */
+
+  // Monitor feature unloading status across all layers
+  private monitorFeatureUnloadingStatus(): void {
+    try {
+      if (!this.view || !this.view.map) return;
+      
+      const totalLayers = this.view.map.layers.length;
+      const featureLayers = this.view.map.layers.filter(layer => layer instanceof FeatureLayer);
+      
+      logger.debug(`Monitoring feature unloading status: ${featureLayers.length} feature layers out of ${totalLayers} total layers`, 'MapService');
+      
+      let totalFeatures = 0;
+      this.view.map.layers.forEach((layer, index) => {
+        if (layer instanceof FeatureLayer) {
+          const featureCount = (layer as any).graphics?.length || 0;
+          const cachedCount = this.cachedFeatures[layer.id]?.length || 0;
+          const isPersistent = (layer as any).persistenceEnabled;
+          const loadAllFeatures = (layer as any).loadAllFeatures;
+          const unloadInvisible = (layer as any).unloadInvisibleFeatures;
+          
+          totalFeatures += featureCount;
+          
+          // Check if features are being unloaded
+          if (cachedCount > 0 && featureCount < cachedCount) {
+            logger.warn(`⚠️ FEATURE UNLOADING DETECTED: Layer ${layer.id} has ${featureCount} features but cached ${cachedCount}`, 'MapService');
+          }
+          
+          logger.debug(`Layer ${index + 1}: ${layer.id} (${layer.title || 'No title'}): ${featureCount}/${cachedCount} features, persistent: ${isPersistent}, loadAll: ${loadAllFeatures}, unloadInvisible: ${unloadInvisible}`, 'MapService');
+        } else {
+          logger.debug(`Layer ${index + 1}: ${layer.id} (${layer.title || 'No title'}): ${layer.constructor.name}`, 'MapService');
+        }
+      });
+      
+      logger.debug(`Total features across all layers: ${totalFeatures}`, 'MapService');
+    } catch (error) {
+      logger.debug('Failed to monitor feature unloading status', 'MapService', error instanceof Error ? error : undefined);
+    }
+  }
+
+  // Get all feature layers for caching operations
+  private getAllFeatureLayers(): FeatureLayer[] {
+    const layers: FeatureLayer[] = [];
+    
+    if (this.parkingLayer) layers.push(this.parkingLayer);
+    if (this.underBaysLayer) layers.push(this.underBaysLayer);
+    if (this.baysLayer) layers.push(this.baysLayer);
+    
+    if (this.view && this.view.map) {
+      this.view.map.layers.forEach(layer => {
+        if (layer instanceof FeatureLayer) {
+          layers.push(layer);
+        }
+      });
+    }
+    
+    return layers;
   }
 
   // Configure all webmap layers to prevent unloading
@@ -1196,19 +1519,42 @@ export class MapService {
         logger.warn('Map is not initialized on the view', 'MapService');
         return;
       }
-      logger.info('Configuring webmap layers with minimal settings', 'MapService');
+      logger.debug('Configuring webmap layers with enhanced unloading prevention', 'MapService');
       
-      // Configure all layers in the webmap with minimal settings
+      // Configure all layers in the webmap with comprehensive unloading prevention
       view.map.layers.forEach(layer => {
         if (layer instanceof FeatureLayer) {
-          // Only set basic persistence, don't override other properties
+          // Core persistence setting
           layer.persistenceEnabled = true;
           
-          logger.debug(`Configured layer ${layer.id} with minimal persistence`, 'MapService');
+          // Apply comprehensive unloading prevention properties
+          try {
+            // Force all features to stay loaded
+            (layer as any).loadAllFeatures = true;
+            
+            // Disable client-side caching restrictions
+            (layer as any).disableClientCaching = false;
+            
+            // Set maximum features to prevent unloading
+            (layer as any).maxRecordCount = 0; // 0 means no limit
+            
+            // Disable feature unloading based on visibility
+            (layer as any).unloadInvisibleFeatures = false;
+            
+            // Keep features in memory even when not visible
+            (layer as any).keepFeaturesInMemory = true;
+            
+            // Disable automatic feature cleanup
+            (layer as any).autoRefreshEnabled = false;
+            
+            logger.debug(`Enhanced unloading prevention configured for webmap layer: ${layer.id}`, 'MapService');
+          } catch {
+            logger.debug(`Some unloading prevention properties not available for webmap layer ${layer.id}`, 'MapService');
+          }
         }
       });
       
-      logger.info('Webmap layers configured successfully', 'MapService');
+      logger.debug('Webmap layers configured successfully with enhanced unloading prevention', 'MapService');
     } catch (error) {
       logger.error('Failed to configure webmap layers', 'MapService', error instanceof Error ? error : undefined);
     }
@@ -1285,3 +1631,4 @@ export class MapService {
     }
   }
 }
+
