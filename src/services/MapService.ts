@@ -768,6 +768,8 @@ export class MapService {
     }
   }
 
+
+
   // Update getMonitoredCarparks to use caching
   async getMonitoredCarparks(): Promise<string[]> {
     const cacheKey = 'monitored_carparks';

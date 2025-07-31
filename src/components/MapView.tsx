@@ -6,16 +6,9 @@ import { useParking } from '../context/ParkingContext';
 import { useMap } from '../hooks/useMap';
 import { ErrorBoundary } from './ErrorBoundary';
 import LoadingScreen from './LoadingScreen';
+import ExcelExportButton from './ExcelExportButton';
 
-interface MapViewComponentProps {
-  authProgress?: {
-    phase: 'initializing' | 'authenticating' | 'loading-map';
-    progress: number;
-    message: string;
-  };
-}
-
-export default function MapViewComponent({ authProgress }: MapViewComponentProps) {
+export default function MapViewComponent() {
   const mapDivRef = useRef<HTMLDivElement>(null);
   
   const { 
@@ -26,11 +19,9 @@ export default function MapViewComponent({ authProgress }: MapViewComponentProps
     }
   } = useParking();
 
-  // Combine authentication and map loading states
-  const isCombinedLoading = isLoading || (authProgress && authProgress.progress < 100);
-  const combinedProgress = isLoading 
-    ? loadingProgress 
-    : (authProgress ?? { phase: 'initializing' as const, progress: 0, message: 'Loading...' });
+  // Only show loading for map initialization, not authentication
+  const isMapLoading = isLoading;
+  const mapProgress = loadingProgress;
 
   const {
     isMenuOpen,
@@ -45,7 +36,8 @@ export default function MapViewComponent({ authProgress }: MapViewComponentProps
     handleBayTypeSelect,
     parkingLotsWithSelectedBayType,
     isBayTypeFilterLoading,
-    handleSelectParkingLot
+    handleSelectParkingLot,
+    mapService
   } = useMap(mapDivRef);
 
   return (
@@ -54,9 +46,9 @@ export default function MapViewComponent({ authProgress }: MapViewComponentProps
         {/* Always render the map div so ref is available */}
         <div ref={mapDivRef} className="w-full h-screen" />
         
-        {/* Show loading screen as overlay if still loading */}
-        {isCombinedLoading ? (
-          <LoadingScreen progress={combinedProgress} />
+        {/* Show loading screen only for map initialization */}
+        {isMapLoading ? (
+          <LoadingScreen progress={mapProgress} />
         ) : (
           <>
             <LazySearchMenu
@@ -82,6 +74,18 @@ export default function MapViewComponent({ authProgress }: MapViewComponentProps
             />
             <LazyParkingInfoTable filters={filters} />
           </>
+        )}
+        
+        {/* Excel Export Button - only show when map is loaded */}
+        {!isMapLoading && (
+          <div className="fixed bottom-20 right-6 z-50">
+            <ExcelExportButton 
+              variant="secondary"
+              size="sm"
+              className="shadow-[var(--shadow)]"
+              mapService={mapService}
+            />
+          </div>
         )}
       </div>
     </ErrorBoundary>

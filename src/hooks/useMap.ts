@@ -1014,6 +1014,7 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
     filters,
     setFilters,
     handleSelectParkingLot,
-    handleBayTypeSelect
+    handleBayTypeSelect,
+    mapService: mapServiceRef.current
   };
 } 

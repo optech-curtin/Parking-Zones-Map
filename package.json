@@ -20,6 +20,8 @@
   },
   "dependencies": {
     "@arcgis/core": "^4.32.9",
+    "@types/file-saver": "^2.0.7",
+    "exceljs": "^4.4.0",
     "next": "^15.3.0",
     "node-cache": "^5.1.2",
     "react": "^19.0.0",

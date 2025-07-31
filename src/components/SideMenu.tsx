@@ -169,13 +169,13 @@ export default function SideMenu({
       .reduce((sum, [, count]) => sum + count, 0);
     
     // Debug logging for "Total in Cap" calculation
-    console.log(`Total in Cap calculation:`, {
-      filters: { paygZones: filters.paygZones, monitoredCarparks: filters.monitoredCarparks },
-      eligibleTypes,
-      counts: Object.entries(counts || {}).filter(([type]) => eligibleTypes.includes(type)),
-      result,
-      note: 'Always uses filtered counts (excludes TCP1/TCP2)'
-    });
+    // console.log(`Total in Cap calculation:`, {
+    //   filters: { paygZones: filters.paygZones, monitoredCarparks: filters.monitoredCarparks },
+    //   eligibleTypes,
+    //   counts: Object.entries(counts || {}).filter(([type]) => eligibleTypes.includes(type)),
+    //   result,
+    //   note: 'Always uses filtered counts (excludes TCP1/TCP2)'
+    // });
     
     return result;
   }, [filteredTotalBayCounts, filteredMonitoredBayCounts, filters.paygZones, filters.monitoredCarparks]);

@@ -45,7 +45,7 @@ const initialState: ParkingState = {
   },
   parkingLots: [],
   monitoredCarparks: [],
-  isLoading: true,
+  isLoading: false, // Start as false, will be set to true when map initializes
   error: null,
   // Enhanced loading state
   loadingProgress: {

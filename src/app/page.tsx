@@ -125,8 +125,8 @@ export default function HomePage() {
     setUserInfo(null);
   }, [setUserInfo]);
 
-  // Show loading screen for authentication
-  if (loading) {
+  // Show loading screen only during authentication, not after
+  if (loading && !isAuthenticated) {
     return <LoadingScreen progress={authProgress} />;
   }
 
@@ -141,7 +141,7 @@ export default function HomePage() {
       <ParkingProvider>
         <div className="min-h-screen flex flex-col relative">
           <div className="flex-1">
-            <MapViewComponent authProgress={authProgress} />
+            <MapViewComponent />
           </div>
           <button
             onClick={handleSignOut}

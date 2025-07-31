@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: 'export',
+  trailingSlash: true,
   // Only use basePath and assetPrefix in production for GitHub Pages
   ...(process.env.NODE_ENV === 'production' ? {
     basePath: '/Parking-Zones-Map',
