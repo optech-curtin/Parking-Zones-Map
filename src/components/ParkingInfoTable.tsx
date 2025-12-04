@@ -37,6 +37,26 @@ export default function ParkingInfoTable({ filters: _filters }: ParkingInfoTable
     }
   };
 
+  // Helper function to format bay type for display (Reserved_* -> Reserved *)
+  const formatBayTypeForDisplay = React.useCallback((type: string): string => {
+    if (!type) return 'Unknown';
+    // Format Reserved_* variants for display (replace underscore with space)
+    if (type.toLowerCase().startsWith('reserved_')) {
+      return type.replace(/_/g, ' ');
+    }
+    return type;
+  }, []);
+
+  // Helper function to get color for bay type (use Reserved color for all Reserved_* variants)
+  const getBayTypeColor = React.useCallback((type: string): string => {
+    if (!type) return '#9E9E9E';
+    // Use Reserved color for all Reserved_* variants
+    if (type.toLowerCase().startsWith('reserved')) {
+      return bayColors['Reserved'] || '#b7619b';
+    }
+    return bayColors[type] || '#9E9E9E';
+  }, [bayColors]);
+
   if (error) {
     return (
       <div className="fixed right-0 top-0 z-20">
@@ -72,17 +92,19 @@ export default function ParkingInfoTable({ filters: _filters }: ParkingInfoTable
       ? selectedBayCounts
           .map(({ type, count }) => {
             const cleanedType = cleanBayType(type);
+            const displayName = formatBayTypeForDisplay(cleanedType);
+            const color = getBayTypeColor(cleanedType);
             const closedCount = selectedClosedBayCounts[cleanedType] || 0;
             return (
               <div key={type} className="flex justify-between items-center">
                 <div className="flex items-center space-x-2">
                   <div
                     className="w-4 h-4 rounded-full border border-[var(--card-border)]"
-                    style={{ backgroundColor: bayColors[cleanedType] || '#9E9E9E' }}
+                    style={{ backgroundColor: color }}
                     role="img"
-                    aria-label={`${cleanedType} bay type indicator`}
+                    aria-label={`${displayName} bay type indicator`}
                   />
-                  <span className="text-[var(--text-primary)]">{cleanedType}</span>
+                  <span className="text-[var(--text-primary)]">{displayName}</span>
                 </div>
                 <span className="font-medium text-[var(--text-primary)]">
                   {count}
@@ -108,13 +130,22 @@ export default function ParkingInfoTable({ filters: _filters }: ParkingInfoTable
                 <div className="flex justify-between items-center">
                   <span className="text-[var(--text-primary)]">Zone</span>
                   <div className="flex items-center space-x-2">
-                    <div
-                      className="w-4 h-4 rounded-full border border-[var(--card-border)]"
-                      style={{ backgroundColor: bayColors[selectedBayAttributes.baytype] || '#9E9E9E' }}
-                      role="img"
-                      aria-label={`${selectedBayAttributes.baytype} bay type indicator`}
-                    />
-                    <span className="font-medium text-[var(--text-primary)]">{selectedBayAttributes.baytype || 'Unknown'}</span>
+                    {(() => {
+                      const bayType = selectedBayAttributes.baytype || 'Unknown';
+                      const displayName = formatBayTypeForDisplay(bayType);
+                      const color = getBayTypeColor(bayType);
+                      return (
+                        <>
+                          <div
+                            className="w-4 h-4 rounded-full border border-[var(--card-border)]"
+                            style={{ backgroundColor: color }}
+                            role="img"
+                            aria-label={`${displayName} bay type indicator`}
+                          />
+                          <span className="font-medium text-[var(--text-primary)]">{displayName}</span>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
                 <div className="flex justify-between items-center">
