@@ -109,6 +109,32 @@ export class MapService {
     return false;
   }
 
+  // Helper function to normalize bay types - groups Reserved_* variants under Reserved
+  normalizeBayType(bayType: string): string {
+    if (!bayType) return 'Unknown';
+    const trimmed = bayType.trim();
+    
+    // Normalize Reserved_* variants to Reserved for counting
+    if (trimmed.toLowerCase().startsWith('reserved_')) {
+      return 'Reserved';
+    }
+    
+    return this.cleanString(bayType);
+  }
+
+  // Helper function to format bay type for display - converts Reserved_* to Reserved *
+  formatBayTypeForDisplay(bayType: string): string {
+    if (!bayType) return 'Unknown';
+    const trimmed = bayType.trim();
+    
+    // Format Reserved_* variants for display (replace underscore with space)
+    if (trimmed.toLowerCase().startsWith('reserved_')) {
+      return trimmed.replace(/_/g, ' ');
+    }
+    
+    return trimmed;
+  }
+
   // Helper function to clean strings
   cleanString(str: string): string {
     if (!str) return 'Unknown';
@@ -904,7 +930,16 @@ export class MapService {
         // Count bay types for this parking lot
         features.forEach(feature => {
           const attributes = feature.attributes as BayFeatureAttributes;
-          const bayType = this.cleanString(attributes.baytype || 'Unknown');
+          // Keep original bay type name but clean it (preserves Reserved_* variants)
+          // Only clean special characters, but preserve underscores for Reserved_* types
+          let bayType = attributes.baytype || 'Unknown';
+          // Clean the bay type but preserve Reserved_* pattern
+          if (!bayType.toLowerCase().startsWith('reserved_')) {
+            bayType = this.cleanString(bayType);
+          } else {
+            // For Reserved_* types, just trim and clean quotes
+            bayType = bayType.trim().replace(/['"]/g, '');
+          }
           const bayStatus = this.cleanString(String(attributes.status || 'Open'));
           
           // Update total counts
@@ -983,7 +1018,15 @@ export class MapService {
       
       features.forEach(feature => {
         const attributes = feature.attributes as BayFeatureAttributes;
-        const bayType = this.cleanString(attributes.baytype || 'Unknown');
+        // Keep original bay type name but clean it (preserves Reserved_* variants)
+        let bayType = attributes.baytype || 'Unknown';
+        // Clean the bay type but preserve Reserved_* pattern
+        if (!bayType.toLowerCase().startsWith('reserved_')) {
+          bayType = this.cleanString(bayType);
+        } else {
+          // For Reserved_* types, just trim and clean quotes
+          bayType = bayType.trim().replace(/['"]/g, '');
+        }
         const bayStatus = this.cleanString(String(attributes.status || 'Open'));
         
         // Check for various closed status values

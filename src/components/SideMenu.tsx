@@ -113,7 +113,8 @@ export default function SideMenu({
       const baysInCapFilteredCounts: { [key: string]: number } = {};
       
       Object.entries(filteredCounts).forEach(([type, count]) => {
-        if (baysInCapTypes.includes(type)) {
+        // Include if in the list OR if it's a Reserved_* variant
+        if (baysInCapTypes.includes(type) || type.toLowerCase().startsWith('reserved_')) {
           baysInCapFilteredCounts[type] = count;
         }
       });
@@ -123,6 +124,25 @@ export default function SideMenu({
     
     return filteredCounts;
   }, [closedBayCounts, filters.paygZones, filters.baysInCap]);
+
+  // Helper function to format bay type for display (Reserved_* -> Reserved *)
+  const formatBayTypeForDisplay = React.useCallback((type: string): string => {
+    if (!type) return 'Unknown';
+    // Format Reserved_* variants for display (replace underscore with space)
+    if (type.toLowerCase().startsWith('reserved_')) {
+      return type.replace(/_/g, ' ');
+    }
+    return type;
+  }, []);
+
+  // Helper function to get color for bay type (use Reserved color for all Reserved_* variants)
+  const getBayTypeColor = React.useCallback((type: string): string => {
+    // Use Reserved color for all Reserved_* variants
+    if (type.toLowerCase().startsWith('reserved')) {
+      return bayColors['Reserved'] || '#b7619b';
+    }
+    return bayColors[type] || '#9E9E9E';
+  }, [bayColors]);
 
   const filteredBayTypes = React.useMemo(() => {
     // Use monitoredBayCounts if the monitoredCarparks filter is active, otherwise use totalBayCounts
@@ -134,7 +154,7 @@ export default function SideMenu({
     }
 
     if (filters.baysInCap) {
-      filtered = filtered.filter(([type]) => ['Green', 'White', 'Yellow', 'Blue', 'Reserved', 'Reserved_Residential', 'ACROD', 'Courtesy', 'EV', '15Minute', '30Minute', '90Minute', 'Maintenance', 'Faculty'].includes(type));
+      filtered = filtered.filter(([type]) => ['Green', 'White', 'Yellow', 'Blue', 'Reserved', 'ACROD', 'Courtesy', 'EV', '15Minute', '30Minute', '90Minute', 'Maintenance', 'Faculty'].includes(type) || type.toLowerCase().startsWith('reserved'));
     }
 
     return filtered.sort(([, a], [, b]) => b - a);
@@ -147,7 +167,7 @@ export default function SideMenu({
 
   // Calculate total bays in cap (matching the baysInCap filter criteria)
   const totalBaysInCap = React.useMemo(() => {
-    const baysInCapTypes = ['Green', 'White', 'Yellow', 'Blue', 'Reserved', 'Reserved_Residential', 'ACROD', 'Courtesy', 'EV', '15Minute', '30Minute', '90Minute', 'Maintenance', 'Faculty'];
+    const baysInCapTypes = ['Green', 'White', 'Yellow', 'Blue', 'Reserved', 'ACROD', 'Courtesy', 'EV', '15Minute', '30Minute', '90Minute', 'Maintenance', 'Faculty'];
     
     // Start with all bay types that match baysInCap criteria
     let eligibleTypes = baysInCapTypes;
@@ -166,7 +186,7 @@ export default function SideMenu({
       : filteredTotalBayCounts;
     
     const result = Object.entries(counts || {})
-      .filter(([type]) => eligibleTypes.includes(type))
+      .filter(([type]) => eligibleTypes.includes(type) || type.toLowerCase().startsWith('reserved_'))
       .reduce((sum, [, count]) => sum + count, 0);
     
     // Debug logging for "Total in Cap" calculation
@@ -269,7 +289,10 @@ export default function SideMenu({
                 </div>
               ) : (
                 <div className="space-y-2 overflow-y-auto max-h-[calc(100vh-12rem)] pr-2">
-                  {filteredBayTypes.map(([type, totalCount]) => (
+                  {filteredBayTypes.map(([type, totalCount]) => {
+                    const displayName = formatBayTypeForDisplay(type);
+                    const color = getBayTypeColor(type);
+                    return (
                     <button
                       key={type}
                       onClick={createBayTypeClickHandler(type)}
@@ -282,9 +305,9 @@ export default function SideMenu({
                       <div className="flex items-center space-x-2">
                         <div 
                           className="w-4 h-4 rounded-full border border-[var(--card-border)]"
-                          style={{ backgroundColor: bayColors[type] || '#9E9E9E' }}
+                          style={{ backgroundColor: color }}
                         />
-                        <span className="text-[var(--text-primary)]">{type}</span>
+                        <span className="text-[var(--text-primary)]">{displayName}</span>
                         {selectedBayTypeFilter === type && parkingLotsWithSelectedBayType.length > 0 ? (
                           <span className="text-xs text-[var(--accent-blue)] font-medium">
                             ({parkingLotsWithSelectedBayType.length} lots)
@@ -300,7 +323,8 @@ export default function SideMenu({
                         ) : null}
                       </span>
                     </button>
-                  ))}
+                    );
+                  })}
                   <div className="border-t border-[var(--card-border)] pt-2 mt-2 space-y-2 sticky bottom-0 bg-[var(--menu-body-bg)]">
                     <div className="flex justify-between font-semibold text-[var(--text-primary)]">
                       <span>Total Bays</span>
