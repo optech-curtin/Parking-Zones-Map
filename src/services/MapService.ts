@@ -930,19 +930,19 @@ export class MapService {
         // Count bay types for this parking lot
         features.forEach(feature => {
           const attributes = feature.attributes as BayFeatureAttributes;
-          // Keep original bay type name but clean it (preserves Reserved_* variants)
+          // Keep original bay type name but clean it (preserves Reserved_* variants for separate counting)
           // Only clean special characters, but preserve underscores for Reserved_* types
           let bayType = attributes.baytype || 'Unknown';
           // Clean the bay type but preserve Reserved_* pattern
           if (!bayType.toLowerCase().startsWith('reserved_')) {
             bayType = this.cleanString(bayType);
           } else {
-            // For Reserved_* types, just trim and clean quotes
+            // For Reserved_* types, just trim and clean quotes (preserve underscore for separate counting)
             bayType = bayType.trim().replace(/['"]/g, '');
           }
           const bayStatus = this.cleanString(String(attributes.status || 'Open'));
           
-          // Update total counts
+          // Update total counts (Reserved_* variants counted separately)
           totalCounts[bayType] = (totalCounts[bayType] || 0) + 1;
           
           // Update individual bay closed counts if bay status indicates closed
@@ -1018,13 +1018,13 @@ export class MapService {
       
       features.forEach(feature => {
         const attributes = feature.attributes as BayFeatureAttributes;
-        // Keep original bay type name but clean it (preserves Reserved_* variants)
+        // Keep original bay type name but clean it (preserves Reserved_* variants for separate counting)
         let bayType = attributes.baytype || 'Unknown';
         // Clean the bay type but preserve Reserved_* pattern
         if (!bayType.toLowerCase().startsWith('reserved_')) {
           bayType = this.cleanString(bayType);
         } else {
-          // For Reserved_* types, just trim and clean quotes
+          // For Reserved_* types, just trim and clean quotes (preserve underscore for separate counting)
           bayType = bayType.trim().replace(/['"]/g, '');
         }
         const bayStatus = this.cleanString(String(attributes.status || 'Open'));
