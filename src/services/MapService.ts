@@ -86,12 +86,27 @@ export class MapService {
     this.cacheService = CacheService.getInstance();
   }
 
-  // Helper function to check if a parking lot is temporary
+  // Helper function to check if a parking lot is temporary or excluded
   isTemporaryParkingLot(parkingLot: string): boolean {
-    const tempPattern = /^TCP\d+$/i; // Matches TCP1, TCP2, TCP3, etc.
-    const result = tempPattern.test(parkingLot.trim());
-    logger.debug(`isTemporaryParkingLot("${parkingLot}") = ${result}`, 'MapService');
-    return result;
+    const trimmed = parkingLot.trim();
+    
+    // Check TCP pattern (TCP1, TCP2, etc.)
+    const tempPattern = /^TCP\d+$/i;
+    if (tempPattern.test(trimmed)) {
+      logger.debug(`isTemporaryParkingLot("${parkingLot}") = true (TCP pattern)`, 'MapService');
+      return true;
+    }
+    
+    // Check excluded parking lots (PT1, PT2, PT3, PT4, PT5, PT7)
+    const excludedLots = ['PT1', 'PT2', 'PT3', 'PT4', 'PT5', 'PT7'];
+    const isExcluded = excludedLots.includes(trimmed);
+    if (isExcluded) {
+      logger.debug(`isTemporaryParkingLot("${parkingLot}") = true (excluded parking lot)`, 'MapService');
+      return true;
+    }
+    
+    logger.debug(`isTemporaryParkingLot("${parkingLot}") = false`, 'MapService');
+    return false;
   }
 
   // Helper function to clean strings

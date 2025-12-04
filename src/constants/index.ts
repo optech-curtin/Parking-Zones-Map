@@ -14,6 +14,7 @@ export const BAY_TYPES = {
   BLUE: 'Blue',
   WHITE: 'White',
   RESERVED: 'Reserved',
+  RESERVED_RESIDENTIAL: 'Reserved_Residential',
   ACROD: 'ACROD',
   COURTESY: 'Courtesy',
   EV: 'EV',
@@ -48,6 +49,7 @@ export const BAY_TYPE_GROUPS = {
     BAY_TYPES.YELLOW,
     BAY_TYPES.BLUE,
     BAY_TYPES.RESERVED,
+    BAY_TYPES.RESERVED_RESIDENTIAL,
     BAY_TYPES.ACROD,
     BAY_TYPES.COURTESY,
     BAY_TYPES.EV,
@@ -88,6 +90,9 @@ export const ERROR_MESSAGES = {
 // Temporary Parking Lot Pattern
 export const TEMP_PARKING_LOT_PATTERN = /^TCP\d+$/i;
 
+// Excluded Parking Lots (excluded from "Bays in Cap" calculations)
+export const EXCLUDED_PARKING_LOTS = ['PT1', 'PT2', 'PT3', 'PT4', 'PT5', 'PT7'] as const;
+
 // Type Guards
 export const isPaygBayType = (bayType: string): boolean => 
   Array.prototype.includes.call(BAY_TYPE_GROUPS.PAYG, bayType);
@@ -95,5 +100,12 @@ export const isPaygBayType = (bayType: string): boolean =>
 export const isBaysInCapType = (bayType: string): boolean => 
   Array.prototype.includes.call(BAY_TYPE_GROUPS.BAYS_IN_CAP, bayType);
 
-export const isTemporaryParkingLot = (parkingLot: string): boolean => 
-  TEMP_PARKING_LOT_PATTERN.test(parkingLot.trim()); 
+export const isTemporaryParkingLot = (parkingLot: string): boolean => {
+  const trimmed = parkingLot.trim();
+  // Check TCP pattern (TCP1, TCP2, etc.)
+  if (TEMP_PARKING_LOT_PATTERN.test(trimmed)) {
+    return true;
+  }
+  // Check excluded parking lots (PT1, PT2, PT3, PT4, PT5, PT7)
+  return EXCLUDED_PARKING_LOTS.includes(trimmed as typeof EXCLUDED_PARKING_LOTS[number]);
+}; 

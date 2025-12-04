@@ -23,6 +23,7 @@ const initialState: ParkingState = {
     'Green': '#71ad47',
     'Yellow': '#ffff00',
     'Reserved': '#b7619b',
+    'Reserved_Residential': '#b7619b',
     '5Minute': '#ffd37f',
     '15Minute': '#ed7d32',
     '30Minute': '#ffd37f',

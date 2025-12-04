@@ -134,7 +134,7 @@ export default function SideMenu({
     }
 
     if (filters.baysInCap) {
-      filtered = filtered.filter(([type]) => ['Green', 'White', 'Yellow', 'Blue', 'Reserved', 'ACROD', 'Courtesy', 'EV', '15Minute', '30Minute', '90Minute', 'Maintenance', 'Faculty'].includes(type));
+      filtered = filtered.filter(([type]) => ['Green', 'White', 'Yellow', 'Blue', 'Reserved', 'Reserved_Residential', 'ACROD', 'Courtesy', 'EV', '15Minute', '30Minute', '90Minute', 'Maintenance', 'Faculty'].includes(type));
     }
 
     return filtered.sort(([, a], [, b]) => b - a);
@@ -147,7 +147,7 @@ export default function SideMenu({
 
   // Calculate total bays in cap (matching the baysInCap filter criteria)
   const totalBaysInCap = React.useMemo(() => {
-    const baysInCapTypes = ['Green', 'White', 'Yellow', 'Blue', 'Reserved', 'ACROD', 'Courtesy', 'EV', '15Minute', '30Minute', '90Minute', 'Maintenance', 'Faculty'];
+    const baysInCapTypes = ['Green', 'White', 'Yellow', 'Blue', 'Reserved', 'Reserved_Residential', 'ACROD', 'Courtesy', 'EV', '15Minute', '30Minute', '90Minute', 'Maintenance', 'Faculty'];
     
     // Start with all bay types that match baysInCap criteria
     let eligibleTypes = baysInCapTypes;
@@ -159,6 +159,7 @@ export default function SideMenu({
     }
     
     // Always use filtered counts for "Total in Cap" to exclude temporary parking lots (TCP1, TCP2, etc.)
+    // and excluded parking lots (PT1, PT2, PT3, PT4, PT5, PT7)
     // This ensures "Total in Cap" represents the actual total of bays in cap, regardless of filter state
     const counts = filters.monitoredCarparks 
       ? filteredMonitoredBayCounts
@@ -174,7 +175,7 @@ export default function SideMenu({
     //   eligibleTypes,
     //   counts: Object.entries(counts || {}).filter(([type]) => eligibleTypes.includes(type)),
     //   result,
-    //   note: 'Always uses filtered counts (excludes TCP1/TCP2)'
+    //   note: 'Always uses filtered counts (excludes TCP1/TCP2 and PT1/PT2/PT3/PT4/PT5/PT7)'
     // });
     
     return result;
