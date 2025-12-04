@@ -113,8 +113,8 @@ export default function SideMenu({
       const baysInCapFilteredCounts: { [key: string]: number } = {};
       
       Object.entries(filteredCounts).forEach(([type, count]) => {
-        // Include if in the list OR if it's a Reserved_* variant
-        if (baysInCapTypes.includes(type) || type.toLowerCase().startsWith('reserved_')) {
+        // Only include if in the list (excludes Reserved_* variants)
+        if (baysInCapTypes.includes(type)) {
           baysInCapFilteredCounts[type] = count;
         }
       });
@@ -154,7 +154,7 @@ export default function SideMenu({
     }
 
     if (filters.baysInCap) {
-      filtered = filtered.filter(([type]) => ['Green', 'White', 'Yellow', 'Blue', 'Reserved', 'ACROD', 'Courtesy', 'EV', '15Minute', '30Minute', '90Minute', 'Maintenance', 'Faculty'].includes(type) || type.toLowerCase().startsWith('reserved'));
+      filtered = filtered.filter(([type]) => ['Green', 'White', 'Yellow', 'Blue', 'Reserved', 'ACROD', 'Courtesy', 'EV', '15Minute', '30Minute', '90Minute', 'Maintenance', 'Faculty'].includes(type));
     }
 
     return filtered.sort(([, a], [, b]) => b - a);
@@ -186,7 +186,7 @@ export default function SideMenu({
       : filteredTotalBayCounts;
     
     const result = Object.entries(counts || {})
-      .filter(([type]) => eligibleTypes.includes(type) || type.toLowerCase().startsWith('reserved_'))
+      .filter(([type]) => eligibleTypes.includes(type))
       .reduce((sum, [, count]) => sum + count, 0);
     
     // Debug logging for "Total in Cap" calculation
