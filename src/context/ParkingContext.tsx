@@ -42,6 +42,7 @@ const initialState: ParkingState = {
     'Faculty': '#fce4d6',
     'Maintenance': '#bf8f00',
     'DropOff': '#833c0b',
+    'Equipark': '#ff8c00',
     'Unknown': '#9E9E9E'
   },
   parkingLots: [],

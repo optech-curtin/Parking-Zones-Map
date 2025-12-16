@@ -889,16 +889,46 @@ export class MapService {
 
       logger.info(`Loaded ${underBaysFeatures.length} under bays features and ${baysFeatures.length} bays features`, 'MapService');
 
+      // Deduplicate features within each layer based on OBJECTID
+      // This prevents counting the same feature twice if it appears multiple times in the query results
+      const deduplicateFeatures = (features: __esri.Graphic[], layerName: string): __esri.Graphic[] => {
+        const seen = new Set<number>();
+        const unique: __esri.Graphic[] = [];
+        let duplicateCount = 0;
+        
+        features.forEach(feature => {
+          const attributes = feature.attributes as BayFeatureAttributes;
+          const objectId = attributes.OBJECTID;
+          
+          if (objectId && seen.has(objectId)) {
+            duplicateCount++;
+            logger.debug(`Duplicate OBJECTID ${objectId} found in ${layerName} layer`, 'MapService');
+          } else {
+            if (objectId) seen.add(objectId);
+            unique.push(feature);
+          }
+        });
+        
+        if (duplicateCount > 0) {
+          logger.warn(`Found ${duplicateCount} duplicate features in ${layerName} layer (deduplicated)`, 'MapService');
+        }
+        
+        return unique;
+      };
+      
+      const uniqueUnderBays = deduplicateFeatures(underBaysFeatures, 'underBays');
+      const uniqueBays = deduplicateFeatures(baysFeatures, 'bays');
+      
       // Initialize counts
       const totalCounts: { [key: string]: number } = {};
       const monitoredCounts: { [key: string]: number } = {};
       const individualBayClosedCounts: { [key: string]: number } = {};
       const parkingLotCounts: { [key: string]: { [key: string]: number } } = {};
 
-      // Process all features from both layers
-      const allFeatures = [...underBaysFeatures, ...baysFeatures];
+      // Process all features from both layers (no overlap expected between layers)
+      const allFeatures = [...uniqueUnderBays, ...uniqueBays];
       
-      logger.info(`Processing ${allFeatures.length} total features`, 'MapService');
+      logger.info(`Processing ${allFeatures.length} total features (${uniqueUnderBays.length} underBays + ${uniqueBays.length} bays)`, 'MapService');
       
       // First, organize features by parking lot
       const featuresByParkingLot: { [key: string]: __esri.Graphic[] } = {};
@@ -936,6 +966,13 @@ export class MapService {
           // Clean the bay type but preserve Reserved_* pattern
           if (!bayType.toLowerCase().startsWith('reserved_')) {
             bayType = this.cleanString(bayType);
+            // Handle case where ReservedName (from cleaned Reserved_Name) might exist
+            // Normalize ReservedName to Reserved_Name for consistency
+            if (bayType.toLowerCase() === 'reservedname' || bayType.toLowerCase().startsWith('reservedname')) {
+              // This was likely a Reserved_* variant that got cleaned - we can't recover the original
+              // but we should handle it consistently. For now, keep it as is but log a warning
+              logger.debug(`Found cleaned Reserved variant: ${bayType} (original: ${attributes.baytype})`, 'MapService');
+            }
           } else {
             // For Reserved_* types, just trim and clean quotes (preserve underscore for separate counting)
             bayType = bayType.trim().replace(/['"]/g, '');
@@ -962,6 +999,16 @@ export class MapService {
       });
 
       logger.info(`Processed counts - Total: ${Object.keys(totalCounts).length} bay types, Closed: ${Object.keys(individualBayClosedCounts).length} bay types`, 'MapService');
+      
+      // Log summary of counts for debugging
+      const topBayTypes = Object.entries(totalCounts)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 10);
+      logger.info(`Top 10 bay types: ${topBayTypes.map(([type, count]) => `${type}: ${count}`).join(', ')}`, 'MapService');
+      
+      // Log total count
+      const totalBays = Object.values(totalCounts).reduce((sum, count) => sum + count, 0);
+      logger.info(`Total bays counted: ${totalBays}`, 'MapService');
 
       // Cache the counts
       this.cachedTotalCounts = totalCounts;
