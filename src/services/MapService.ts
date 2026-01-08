@@ -76,7 +76,7 @@ export class MapService {
   private cacheService: CacheService;
   private readonly PAGE_SIZE = 1000;
   private layerLoadPromises: Promise<void>[] = [];
-  private readonly MAX_RETRIES = 3;
+  private readonly MAX_RETRIES = 2; // Reduced from 3 to 2 to fail faster
   private readonly RETRY_DELAY_BASE = 1000; // 1 second base delay
 
   constructor() {
@@ -89,21 +89,30 @@ export class MapService {
   }
 
   // Helper to check if an error is retryable (504, 503, network errors)
+  // CORS errors are NOT retryable - they will always fail
   private isRetryableError(error: any): boolean {
     if (!error) return false;
     
-    // Check for HTTP status codes
+    // CORS errors are never retryable - they indicate a configuration issue
+    const message = String(error.message || error.toString() || '').toLowerCase();
+    if (message.includes('cors') || 
+        message.includes('cross-origin') || 
+        message.includes('access-control-allow-origin')) {
+      logger.warn('CORS error detected - not retrying', 'MapService');
+      return false;
+    }
+    
+    // Check for HTTP status codes (but not CORS-related ones)
     const status = error.status || error.statusCode || (error.response?.status);
     if (status === 504 || status === 503 || status === 502 || status === 429) {
+      // Only retry if it's not a CORS issue
       return true;
     }
     
-    // Check for network errors
-    const message = error.message?.toLowerCase() || '';
+    // Check for network errors (but not CORS)
     if (message.includes('timeout') || 
         message.includes('network') || 
-        message.includes('failed to fetch') ||
-        message.includes('cors')) {
+        message.includes('failed to fetch')) {
       return true;
     }
     

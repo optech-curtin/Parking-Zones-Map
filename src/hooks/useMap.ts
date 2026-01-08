@@ -591,53 +591,60 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
         ]);
       };
 
-      // Load and process features in parallel with timeouts
-      const FEATURE_LOAD_TIMEOUT = 120000; // 2 minutes timeout
-      const [featuresPromise, bayFieldsPromise, testFilterPromise] = await Promise.allSettled([
-        withTimeout(
-          mapService.loadAndProcessFeatures(),
-          FEATURE_LOAD_TIMEOUT,
-          'Feature loading timed out after 2 minutes. The server may be slow or experiencing issues.'
-        ).catch(error => {
-          logger.error('Feature loading failed or timed out', 'useMap', error);
-          throw error;
-        }),
+      // Load and process features with timeout - make it non-blocking
+      // Use shorter timeout since CORS errors will block immediately
+      const FEATURE_LOAD_TIMEOUT = 45000; // 45 seconds timeout (reduced from 2 minutes)
+      
+      // Start feature loading in background - don't block on it
+      const featureLoadPromise = withTimeout(
+        mapService.loadAndProcessFeatures(),
+        FEATURE_LOAD_TIMEOUT,
+        'Feature loading timed out. The server may be experiencing CORS or timeout issues.'
+      ).catch(error => {
+        logger.error('Feature loading failed or timed out', 'useMap', error);
+        console.warn('Feature loading failed. The map will continue with limited functionality:', error.message || error);
+        return null; // Don't throw, just return null
+      });
+
+      // Non-critical operations with shorter timeouts - don't wait for these
+      Promise.allSettled([
         withTimeout(
           mapService.verifyBayLayerFields(),
-          30000, // 30 second timeout
+          15000, // 15 second timeout
           'Bay field verification timed out'
-        ).catch(error => {
-          logger.warn('Bay field verification failed or timed out', 'useMap', error);
-          return; // Non-critical, continue
-        }),
+        ).catch(() => null),
         withTimeout(
           mapService.testBayTypeFiltering('Green'),
-          30000, // 30 second timeout
+          15000, // 15 second timeout
           'Bay filtering test timed out'
-        ).catch(error => {
-          logger.warn('Bay filtering test failed or timed out', 'useMap', error);
-          return; // Non-critical, continue
-        })
-      ]);
+        ).catch(() => null)
+      ]).then(results => {
+        results.forEach((result, index) => {
+          if (result.status === 'rejected') {
+            logger.warn(`Operation ${index} failed`, 'useMap', result.reason);
+          }
+        });
+      });
+      
+      // Wait for feature loading with a maximum wait time, then continue regardless
+      try {
+        await Promise.race([
+          featureLoadPromise,
+          new Promise<void>((resolve) => 
+            setTimeout(() => {
+              console.warn('Feature loading timeout reached, continuing without it...');
+              resolve();
+            }, FEATURE_LOAD_TIMEOUT)
+          )
+        ]);
+      } catch (error) {
+        // Ignore errors - continue anyway
+        logger.warn('Feature loading error, continuing anyway', 'useMap', error);
+      }
       
       // Record layer loading time
       const layerLoadTime = performanceMonitor.endTimer('layer-loading');
       performanceMonitor.recordLayerLoadTime(layerLoadTime);
-
-      // Handle any errors from parallel operations
-      if (featuresPromise.status === 'rejected') {
-        const error = featuresPromise.reason;
-        logger.error('Failed to load features', 'useMap', error);
-        // Don't throw - allow the app to continue with partial data
-        // The map can still function without all features loaded
-        console.error('Feature loading failed. The map may have limited functionality:', error);
-      }
-      if (bayFieldsPromise.status === 'rejected') {
-        logger.warn('Failed to verify bay fields', 'useMap', bayFieldsPromise.reason);
-      }
-      if (testFilterPromise.status === 'rejected') {
-        logger.warn('Failed to test bay filtering', 'useMap', testFilterPromise.reason);
-      }
 
       setLoadingProgress({
         phase: 'preloading',
