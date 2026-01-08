@@ -435,6 +435,9 @@ export class MapService {
           visible: true,
           // Prevent unloading when out of view
           persistenceEnabled: true,
+          // CRITICAL: Don't load all features - only load on demand/interaction
+          // This prevents loading all features at once (changed in SDK 4.20+)
+          loadAllFeatures: false,
           // Optimize rendering
           renderer: {
             type: "simple",
@@ -471,8 +474,11 @@ export class MapService {
         parkingLayer.outFields = ['Zone', 'status', 'isMonitored'];
         // Apply performance optimizations and prevent unloading
         parkingLayer.persistenceEnabled = true;
+        // CRITICAL: Don't load all features - only load on demand/interaction
+        // This prevents loading all features at once (changed in SDK 4.20+)
+        (parkingLayer as any).loadAllFeatures = false;
         this.parkingLayer = parkingLayer;
-        logger.debug('Existing parking layer loaded and configured', 'MapService');
+        logger.debug('Existing parking layer loaded and configured (loadAllFeatures: false)', 'MapService');
       } catch (error) {
         throw new LayerInitializationError(
           'Failed to load existing parking layer',
@@ -508,6 +514,9 @@ export class MapService {
         visible: true,
         // Enhanced unloading prevention
         persistenceEnabled: true,
+        // CRITICAL: Don't load all features - only load on demand/interaction
+        // This prevents loading all features at once (changed in SDK 4.20+)
+        loadAllFeatures: false,
         renderer: {
           type: "unique-value",
           field: "status",
@@ -542,6 +551,9 @@ export class MapService {
         visible: true,
         // Enhanced unloading prevention
         persistenceEnabled: true,
+        // CRITICAL: Don't load all features - only load on demand/interaction
+        // This prevents loading all features at once (changed in SDK 4.20+)
+        loadAllFeatures: false,
         renderer: {
           type: "unique-value",
           field: "status",
@@ -588,7 +600,8 @@ export class MapService {
       // Apply additional unloading prevention properties after creation
       try {
         // Enhanced properties for underBaysLayer
-        (this.underBaysLayer as any).loadAllFeatures = true;
+        // NOTE: loadAllFeatures is false by default (set in constructor) to prevent loading all features at once
+        // This prevents the SDK 4.20+ behavior of loading all features on layer load
         (this.underBaysLayer as any).disableClientCaching = false;
         (this.underBaysLayer as any).maxRecordCount = 0;
         (this.underBaysLayer as any).unloadInvisibleFeatures = false;
@@ -596,14 +609,14 @@ export class MapService {
         (this.underBaysLayer as any).autoRefreshEnabled = false;
         
         // Enhanced properties for baysLayer
-        (this.baysLayer as any).loadAllFeatures = true;
+        // NOTE: loadAllFeatures is false by default (set in constructor) to prevent loading all features at once
         (this.baysLayer as any).disableClientCaching = false;
         (this.baysLayer as any).maxRecordCount = 0;
         (this.baysLayer as any).unloadInvisibleFeatures = false;
         (this.baysLayer as any).keepFeaturesInMemory = true;
         (this.baysLayer as any).autoRefreshEnabled = false;
         
-        logger.debug('Enhanced unloading prevention properties applied to bay layers', 'MapService');
+        logger.debug('Enhanced unloading prevention properties applied to bay layers (loadAllFeatures: false to prevent mass loading)', 'MapService');
       } catch {
         logger.debug('Some enhanced unloading prevention properties not available', 'MapService');
       }
@@ -1512,8 +1525,8 @@ export class MapService {
           
           // Additional ArcGIS-specific properties to prevent unloading
           try {
-            // Force all features to stay loaded
-            (layer as any).loadAllFeatures = true;
+            // NOTE: Don't set loadAllFeatures = true here - that would load all features at once (SDK 4.20+ behavior)
+            // We want features to load on-demand, not all at once
             
             // Disable client-side caching restrictions
             (layer as any).disableClientCaching = false;
@@ -1593,10 +1606,11 @@ export class MapService {
           // Apply ALL possible unloading prevention properties
           const layerAny = layer as any;
           
-          // Force all features to stay loaded
-          if (typeof layerAny.loadAllFeatures !== 'undefined') {
-            layerAny.loadAllFeatures = true;
-          }
+          // NOTE: We intentionally DON'T set loadAllFeatures = true here because:
+          // 1. SDK 4.20+ changed behavior to load ALL features by default when loadAllFeatures = true
+          // 2. This causes massive timeouts with large datasets
+          // 3. We use queryFeatures() explicitly when we need all features instead
+          // Setting loadAllFeatures = false prevents automatic mass loading
           
           // Disable client-side caching restrictions
           if (typeof layerAny.disableClientCaching !== 'undefined') {
