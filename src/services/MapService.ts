@@ -76,6 +76,8 @@ export class MapService {
   private cacheService: CacheService;
   private readonly PAGE_SIZE = 1000;
   private layerLoadPromises: Promise<void>[] = [];
+  private readonly MAX_RETRIES = 3;
+  private readonly RETRY_DELAY_BASE = 1000; // 1 second base delay
 
   constructor() {
     const portalUrl = process.env.NEXT_PUBLIC_ARCGIS_PORTAL_URL;
@@ -84,6 +86,68 @@ export class MapService {
     }
     esriConfig.portalUrl = portalUrl;
     this.cacheService = CacheService.getInstance();
+  }
+
+  // Helper to check if an error is retryable (504, 503, network errors)
+  private isRetryableError(error: any): boolean {
+    if (!error) return false;
+    
+    // Check for HTTP status codes
+    const status = error.status || error.statusCode || (error.response?.status);
+    if (status === 504 || status === 503 || status === 502 || status === 429) {
+      return true;
+    }
+    
+    // Check for network errors
+    const message = error.message?.toLowerCase() || '';
+    if (message.includes('timeout') || 
+        message.includes('network') || 
+        message.includes('failed to fetch') ||
+        message.includes('cors')) {
+      return true;
+    }
+    
+    // Check for ArcGIS-specific timeout errors
+    if (error.name === 'timeout' || error.type === 'timeout') {
+      return true;
+    }
+    
+    return false;
+  }
+
+  // Retry wrapper with exponential backoff
+  private async retryWithBackoff<T>(
+    operation: () => Promise<T>,
+    operationName: string,
+    maxRetries: number = this.MAX_RETRIES
+  ): Promise<T> {
+    let lastError: any;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        
+        // If this is the last attempt or error is not retryable, throw
+        if (attempt === maxRetries || !this.isRetryableError(error)) {
+          throw error;
+        }
+        
+        // Calculate exponential backoff delay
+        const delay = this.RETRY_DELAY_BASE * Math.pow(2, attempt);
+        logger.warn(
+          `${operationName} failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms...`,
+          'MapService',
+          error instanceof Error ? error : undefined
+        );
+        
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    
+    throw lastError;
   }
 
   // Helper function to check if a parking lot is temporary or excluded
@@ -171,33 +235,39 @@ export class MapService {
     let start = 0;
 
     try {
-    while (hasMore) {
-      query.start = start;
-      query.num = pageSize;
-      
-      const result = await layer.queryFeatures(query);
-      
-      if (!result.features) {
-        throw new FeatureQueryError(
-          `No features returned from query for layer ${layer.id}`,
-          layer.id
+      while (hasMore) {
+        query.start = start;
+        query.num = pageSize;
+        
+        // Use retry logic for each page query
+        const result = await this.retryWithBackoff(
+          async () => {
+            const queryResult = await layer.queryFeatures(query);
+            if (!queryResult.features) {
+              throw new FeatureQueryError(
+                `No features returned from query for layer ${layer.id}`,
+                layer.id
+              );
+            }
+            return queryResult;
+          },
+          `Query page ${start / pageSize + 1} for layer ${layer.id}`
         );
+        
+        allFeatures = [...allFeatures, ...result.features];
+        
+        if (result.features.length < pageSize) {
+          hasMore = false;
+        } else {
+          start += pageSize;
+        }
       }
 
-      allFeatures = [...allFeatures, ...result.features];
-      
-      if (result.features.length < pageSize) {
-        hasMore = false;
-      } else {
-        start += pageSize;
-      }
-    }
-
-    this.cacheService.set(cacheKey, allFeatures);
+      this.cacheService.set(cacheKey, allFeatures);
       logger.debug(`Cached query result: ${cacheKey}`, 'MapService');
-    return allFeatures;
+      return allFeatures;
     } catch (error) {
-      logger.error(`Query failed for layer ${layer.id}`, 'MapService', error instanceof Error ? error : undefined);
+      logger.error(`Query failed for layer ${layer.id} after retries`, 'MapService', error instanceof Error ? error : undefined);
       throw new FeatureQueryError(
         `Failed to query features from layer ${layer.id}`,
         layer.id,
@@ -627,11 +697,20 @@ export class MapService {
         query.start = start;
         query.num = pageSize;
         
-        const result = await layer.queryFeatures(query);
-        
-        if (!result.features) {
-          break;
-        }
+        // Use retry logic for each page query
+        const result = await this.retryWithBackoff(
+          async () => {
+            const queryResult = await layer.queryFeatures(query);
+            if (!queryResult.features) {
+              throw new FeatureQueryError(
+                `No features returned from efficient query for layer ${layer.id}`,
+                layer.id
+              );
+            }
+            return queryResult;
+          },
+          `Efficient query page ${start / pageSize + 1} for layer ${layer.id}`
+        );
         
         allFeatures = [...allFeatures, ...result.features];
         
@@ -647,7 +726,7 @@ export class MapService {
       
       return allFeatures;
     } catch (error) {
-      logger.error(`Efficient query failed for layer ${layer.id}`, 'MapService', error instanceof Error ? error : undefined);
+      logger.error(`Efficient query failed for layer ${layer.id} after retries`, 'MapService', error instanceof Error ? error : undefined);
       throw new FeatureQueryError(
         `Failed to query features efficiently from layer ${layer.id}`,
         layer.id,
@@ -785,15 +864,21 @@ export class MapService {
       const query = this.parkingLayer.createQuery();
       query.returnGeometry = false;
       query.outFields = ['Zone'];
-      const result = await this.parkingLayer.queryFeatures(query);
       
-      if (!result.features) {
-        throw new FeatureQueryError(
-          'No features returned from parking lots query',
-          this.parkingLayer.id
-        );
-      }
-
+      const result = await this.retryWithBackoff(
+        async () => {
+          const queryResult = await this.parkingLayer!.queryFeatures(query);
+          if (!queryResult.features) {
+            throw new FeatureQueryError(
+              'No features returned from parking lots query',
+              this.parkingLayer!.id
+            );
+          }
+          return queryResult;
+        },
+        `getParkingLots for layer ${this.parkingLayer.id}`
+      );
+      
       const lots = [...new Set(result.features.map(f => 
         this.cleanString((f.attributes as ParkingFeatureAttributes).Zone)
       ))];
@@ -827,15 +912,21 @@ export class MapService {
       const query = this.parkingLayer.createQuery();
       query.where = "isMonitored = 'True'";
       query.outFields = ['Zone'];
-      const result = await this.parkingLayer.queryFeatures(query);
       
-      if (!result.features) {
-        throw new FeatureQueryError(
-          'No features returned from monitored carparks query',
-          this.parkingLayer.id
-        );
-      }
-
+      const result = await this.retryWithBackoff(
+        async () => {
+          const queryResult = await this.parkingLayer!.queryFeatures(query);
+          if (!queryResult.features) {
+            throw new FeatureQueryError(
+              'No features returned from monitored carparks query',
+              this.parkingLayer!.id
+            );
+          }
+          return queryResult;
+        },
+        `getMonitoredCarparks for layer ${this.parkingLayer.id}`
+      );
+      
       const carparks = result.features.map(f => 
         this.cleanString((f.attributes as ParkingFeatureAttributes).Zone)
       );
@@ -865,7 +956,19 @@ export class MapService {
       const parkingQuery = this.parkingLayer.createQuery();
       parkingQuery.where = "isMonitored = 'True'";
       parkingQuery.outFields = ['Zone'];
-      const parkingResult = await this.parkingLayer.queryFeatures(parkingQuery);
+      const parkingResult = await this.retryWithBackoff(
+        async () => {
+          const queryResult = await this.parkingLayer!.queryFeatures(parkingQuery);
+          if (!queryResult.features) {
+            throw new FeatureQueryError(
+              'No features returned from monitored parking lots query',
+              this.parkingLayer!.id
+            );
+          }
+          return queryResult;
+        },
+        `loadAndProcessFeatures - monitored parking lots query for layer ${this.parkingLayer.id}`
+      );
       
       const monitoredParkingLots = new Set(
         parkingResult.features.map(f => 
@@ -1715,7 +1818,19 @@ export class MapService {
       const query = this.parkingLayer.createQuery();
       query.returnGeometry = false;
       query.outFields = ['Zone'];
-      const result = await this.parkingLayer.queryFeatures(query);
+      const result = await this.retryWithBackoff(
+        async () => {
+          const queryResult = await this.parkingLayer!.queryFeatures(query);
+          if (!queryResult.features) {
+            throw new FeatureQueryError(
+              'No features returned from official parking lot names query',
+              this.parkingLayer!.id
+            );
+          }
+          return queryResult;
+        },
+        `getOfficialParkingLotNames for layer ${this.parkingLayer.id}`
+      );
       
       const officialNames = result.features.map(f => 
         this.cleanString((f.attributes as ParkingFeatureAttributes).Zone)

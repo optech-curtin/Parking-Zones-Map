@@ -37,11 +37,16 @@ export default function HomePage() {
 
   // Next.js will expose NEXT_PUBLIC_… vars to the browser
   const portalUrl = process.env.NEXT_PUBLIC_ARCGIS_PORTAL_URL || "";
-  const appId = process.env.NEXT_PUBLIC_ARCGIS_APP_ID || "";
+  // Support both APP_ID and CLIENT_ID (they're the same in ArcGIS)
+  const appId = process.env.NEXT_PUBLIC_ARCGIS_APP_ID || process.env.NEXT_PUBLIC_ARCGIS_CLIENT_ID || "";
 
   useEffect(() => {
     async function initArcGISAuth() {
       if (!portalUrl || !appId) {
+        console.error('Missing ArcGIS configuration:', {
+          portalUrl: portalUrl ? '✓' : '✗',
+          appId: appId ? '✓' : '✗'
+        });
         setLoading(false);
         return;
       }
@@ -83,9 +88,11 @@ export default function HomePage() {
         message: 'Checking authentication status...'
       });
 
-      // 2. Check if already signed in
+      // 2. Check if already signed in or get credentials
       try {
+        // First, check if we already have valid credentials
         await IdentityManager.checkSignInStatus(`${portalUrl}/sharing`);
+        
         // If we get here, there is a valid credential in browser storage
         const portal = new Portal({
           authMode: "immediate",
@@ -100,18 +107,65 @@ export default function HomePage() {
           };
           setUserInfo(userInfo);
           setIsAuthenticated(true);
+          console.log('ArcGIS authentication successful (existing credentials):', userInfo);
+        } else {
+          throw new Error('No user found in portal');
         }
-      } catch {
-        // Not signed in yet - automatically trigger sign in
-        IdentityManager.getCredential(`${portalUrl}/sharing`);
-      } finally {
+      } catch (error) {
+        // No existing credentials - need to authenticate
+        console.log('No existing credentials found, initiating OAuth flow...', error);
+        
         setAuthProgress({
           phase: 'authenticating',
-          progress: 100,
-          message: 'Authentication complete'
+          progress: 70,
+          message: 'Signing in to ArcGIS...'
         });
-        setLoading(false);
+
+        try {
+          // Get credentials - this will open OAuth popup/redirect
+          // The promise resolves when the OAuth flow completes
+          await IdentityManager.getCredential(`${portalUrl}/sharing`);
+          
+          console.log('Credential obtained, verifying...');
+          
+          // After getting credential, verify authentication
+          const portal = new Portal({
+            authMode: "immediate",
+            url: portalUrl
+          });
+          await portal.load();
+
+          if (portal.user) {
+            const userInfo: UserInfo = {
+              fullName: portal.user.fullName ?? "Unknown User",
+              username: portal.user.username ?? "unknown"
+            };
+            setUserInfo(userInfo);
+            setIsAuthenticated(true);
+            console.log('ArcGIS authentication successful (new credentials):', userInfo);
+          } else {
+            throw new Error('Portal loaded but no user found after authentication');
+          }
+        } catch (credError) {
+          console.error('Failed to get credentials:', credError);
+          setAuthProgress({
+            phase: 'authenticating',
+            progress: 100,
+            message: 'Authentication failed. Please check your credentials and try again.'
+          });
+          // Still set loading to false so user can see the error
+          setLoading(false);
+          return;
+        }
       }
+
+      // Authentication successful
+      setAuthProgress({
+        phase: 'authenticating',
+        progress: 100,
+        message: 'Authentication complete'
+      });
+      setLoading(false);
     }
 
     initArcGISAuth();

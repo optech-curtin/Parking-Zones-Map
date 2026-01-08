@@ -581,11 +581,43 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
       // Start layer loading timer
       performanceMonitor.startTimer('layer-loading');
 
-      // Load and process features in parallel
+      // Helper function to add timeout to promises
+      const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> => {
+        return Promise.race([
+          promise,
+          new Promise<T>((_, reject) => 
+            setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
+          )
+        ]);
+      };
+
+      // Load and process features in parallel with timeouts
+      const FEATURE_LOAD_TIMEOUT = 120000; // 2 minutes timeout
       const [featuresPromise, bayFieldsPromise, testFilterPromise] = await Promise.allSettled([
-        mapService.loadAndProcessFeatures(),
-        mapService.verifyBayLayerFields(),
-        mapService.testBayTypeFiltering('Green')
+        withTimeout(
+          mapService.loadAndProcessFeatures(),
+          FEATURE_LOAD_TIMEOUT,
+          'Feature loading timed out after 2 minutes. The server may be slow or experiencing issues.'
+        ).catch(error => {
+          logger.error('Feature loading failed or timed out', 'useMap', error);
+          throw error;
+        }),
+        withTimeout(
+          mapService.verifyBayLayerFields(),
+          30000, // 30 second timeout
+          'Bay field verification timed out'
+        ).catch(error => {
+          logger.warn('Bay field verification failed or timed out', 'useMap', error);
+          return; // Non-critical, continue
+        }),
+        withTimeout(
+          mapService.testBayTypeFiltering('Green'),
+          30000, // 30 second timeout
+          'Bay filtering test timed out'
+        ).catch(error => {
+          logger.warn('Bay filtering test failed or timed out', 'useMap', error);
+          return; // Non-critical, continue
+        })
       ]);
       
       // Record layer loading time
@@ -594,7 +626,11 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
 
       // Handle any errors from parallel operations
       if (featuresPromise.status === 'rejected') {
-        logger.error('Failed to load features', 'useMap', featuresPromise.reason);
+        const error = featuresPromise.reason;
+        logger.error('Failed to load features', 'useMap', error);
+        // Don't throw - allow the app to continue with partial data
+        // The map can still function without all features loaded
+        console.error('Feature loading failed. The map may have limited functionality:', error);
       }
       if (bayFieldsPromise.status === 'rejected') {
         logger.warn('Failed to verify bay fields', 'useMap', bayFieldsPromise.reason);
