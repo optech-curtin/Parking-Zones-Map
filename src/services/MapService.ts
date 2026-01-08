@@ -953,31 +953,67 @@ export class MapService {
 
   async loadAndProcessFeatures(): Promise<void> {
     try {
-      if (this.featuresLoaded) return;
+      if (this.featuresLoaded) {
+        logger.debug('Features already loaded, skipping', 'MapService');
+        return;
+      }
 
       logger.info('Starting to load and process features', 'MapService');
+      const loadStartTime = Date.now();
 
       // First, get monitored parking lots from the parking layer
       if (!this.parkingLayer) {
+        logger.error('Parking layer not initialized, cannot load features', 'MapService');
         throw new MapServiceError('Parking layer not initialized');
       }
 
+      logger.debug('Querying monitored parking lots from parking layer', 'MapService');
       const parkingQuery = this.parkingLayer.createQuery();
       parkingQuery.where = "isMonitored = 'True'";
       parkingQuery.outFields = ['Zone'];
-      const parkingResult = await this.retryWithBackoff(
-        async () => {
-          const queryResult = await this.parkingLayer!.queryFeatures(parkingQuery);
-          if (!queryResult.features) {
-            throw new FeatureQueryError(
-              'No features returned from monitored parking lots query',
-              this.parkingLayer!.id
-            );
-          }
-          return queryResult;
-        },
-        `loadAndProcessFeatures - monitored parking lots query for layer ${this.parkingLayer.id}`
-      );
+      
+      // Add timeout wrapper around the entire retry operation
+      // Use shorter timeout since CORS will block immediately
+      const MONITORED_QUERY_TIMEOUT = 15000; // 15 second timeout for monitored query (reduced from 20s)
+      logger.debug(`Starting monitored parking lots query with ${MONITORED_QUERY_TIMEOUT}ms timeout`, 'MapService');
+      console.log(`[MapService] Starting monitored parking lots query (max ${MONITORED_QUERY_TIMEOUT}ms)`);
+      
+      let parkingResult: __esri.FeatureSet = { features: [] } as __esri.FeatureSet;
+      
+      try {
+        parkingResult = await Promise.race([
+          // Use shorter retry (1 retry instead of 2) for faster failure
+          this.retryWithBackoff(
+            async () => {
+              logger.debug('Attempting to query monitored parking lots', 'MapService');
+              const queryResult = await this.parkingLayer!.queryFeatures(parkingQuery);
+              if (!queryResult.features) {
+                throw new FeatureQueryError(
+                  'No features returned from monitored parking lots query',
+                  this.parkingLayer!.id
+                );
+              }
+              logger.debug(`Monitored parking lots query successful: ${queryResult.features.length} features`, 'MapService');
+              return queryResult;
+            },
+            `loadAndProcessFeatures - monitored parking lots query for layer ${this.parkingLayer.id}`,
+            1 // Only 1 retry for faster failure
+          ),
+          new Promise<__esri.FeatureSet>((_, reject) => 
+            setTimeout(() => {
+              const elapsed = Date.now() - loadStartTime;
+              logger.warn(`Monitored parking lots query timed out after ${elapsed}ms, using empty result`, 'MapService');
+              console.warn(`[MapService] Monitored parking lots query timed out after ${elapsed}ms`);
+              reject(new Error(`Monitored parking lots query timed out after ${MONITORED_QUERY_TIMEOUT}ms`));
+            }, MONITORED_QUERY_TIMEOUT)
+          )
+        ]);
+        logger.debug(`Monitored parking lots query completed: ${parkingResult.features.length} features`, 'MapService');
+      } catch (error) {
+        logger.warn('Monitored parking lots query failed, continuing with empty set', 'MapService', error);
+        console.warn('[MapService] Monitored parking lots query failed, continuing with empty set:', error);
+        // Already initialized to empty FeatureSet above
+      }
       
       const monitoredParkingLots = new Set(
         parkingResult.features.map(f => 
@@ -989,17 +1025,53 @@ export class MapService {
 
       // Use the already initialized bay layers
       if (!this.underBaysLayer || !this.baysLayer) {
+        logger.error('Bay layers not initialized, cannot load features', 'MapService');
         throw new MapServiceError('Bay layers not initialized');
       }
 
       logger.info('Querying bay layers for features', 'MapService');
-
-      const [underBaysFeatures, baysFeatures] = await Promise.all([
-        this.queryAllFeatures(this.underBaysLayer),
-        this.queryAllFeatures(this.baysLayer)
-      ]);
-
-      logger.info(`Loaded ${underBaysFeatures.length} under bays features and ${baysFeatures.length} bays features`, 'MapService');
+      const bayQueryStartTime = Date.now();
+      
+      // Add timeout wrapper around bay layer queries
+      const BAY_QUERY_TIMEOUT = 30000; // 30 second timeout for bay queries
+      logger.debug(`Starting bay layer queries with ${BAY_QUERY_TIMEOUT}ms timeout`, 'MapService');
+      
+      let underBaysFeatures: __esri.Graphic[] = [];
+      let baysFeatures: __esri.Graphic[] = [];
+      
+      try {
+        const bayQueriesPromise = Promise.all([
+          this.queryAllFeatures(this.underBaysLayer).catch(error => {
+            logger.warn('UnderBays query failed, using empty array', 'MapService', error);
+            return [] as __esri.Graphic[];
+          }),
+          this.queryAllFeatures(this.baysLayer).catch(error => {
+            logger.warn('Bays query failed, using empty array', 'MapService', error);
+            return [] as __esri.Graphic[];
+          })
+        ]);
+        
+        const bayResults = await Promise.race([
+          bayQueriesPromise,
+          new Promise<[__esri.Graphic[], __esri.Graphic[]]>((resolve) => 
+            setTimeout(() => {
+              const elapsed = Date.now() - bayQueryStartTime;
+              logger.warn(`Bay layer queries timed out after ${elapsed}ms, using empty arrays`, 'MapService');
+              console.warn(`[MapService] Bay layer queries timed out after ${elapsed}ms, using empty arrays`);
+              resolve([[], []]);
+            }, BAY_QUERY_TIMEOUT)
+          )
+        ]);
+        
+        [underBaysFeatures, baysFeatures] = bayResults;
+        const elapsed = Date.now() - bayQueryStartTime;
+        logger.info(`Loaded ${underBaysFeatures.length} under bays features and ${baysFeatures.length} bays features in ${elapsed}ms`, 'MapService');
+        console.log(`[MapService] Bay queries completed: ${underBaysFeatures.length} underBays, ${baysFeatures.length} bays`);
+      } catch (error) {
+        logger.error('Bay layer queries error, using empty arrays', 'MapService', error);
+        console.error('[MapService] Bay layer queries error, using empty arrays:', error);
+        // Already initialized to empty arrays above
+      }
 
       // Deduplicate features within each layer based on OBJECTID
       // This prevents counting the same feature twice if it appears multiple times in the query results
@@ -1137,15 +1209,32 @@ export class MapService {
 
 
       this.featuresLoaded = true;
-      logger.info('Feature loading and processing completed', 'MapService');
+      const totalElapsed = Date.now() - loadStartTime;
+      logger.info(`Feature loading and processing completed in ${totalElapsed}ms`, 'MapService');
       logger.info(`Total parking lots loaded: ${Object.keys(this.cachedParkingLotCounts).length}`, 'MapService');
       logger.info(`Sample parking lots: ${Object.keys(this.cachedParkingLotCounts).slice(0, 5).join(', ')}`, 'MapService');
+      console.log(`[MapService] Feature loading completed in ${totalElapsed}ms - ${Object.keys(this.cachedParkingLotCounts).length} parking lots`);
     } catch (error) {
-      logger.error('Failed to load and process features', 'MapService', error instanceof Error ? error : undefined);
-      throw new MapServiceError(
-        'Failed to load and process features',
-        error instanceof Error ? error : undefined
-      );
+      const totalElapsed = Date.now() - loadStartTime;
+      logger.error(`Failed to load and process features after ${totalElapsed}ms`, 'MapService', error instanceof Error ? error : undefined);
+      console.error(`[MapService] Failed to load and process features after ${totalElapsed}ms:`, error);
+      
+      // Don't throw - mark as loaded with empty data so app can continue
+      // This prevents hanging if there are CORS issues
+      this.featuresLoaded = true;
+      this.cachedTotalCounts = {};
+      this.cachedMonitoredCounts = {};
+      this.cachedIndividualBayClosedCounts = {};
+      this.cachedParkingLotCounts = {};
+      
+      logger.warn('Feature loading failed but marked as complete with empty data to allow app to continue', 'MapService');
+      console.warn('[MapService] Feature loading failed but continuing with empty data');
+      
+      // Don't throw - let the app continue with empty data
+      // throw new MapServiceError(
+      //   'Failed to load and process features',
+      //   error instanceof Error ? error : undefined
+      // );
     }
   }
 
