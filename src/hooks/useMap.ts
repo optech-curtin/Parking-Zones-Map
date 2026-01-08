@@ -577,6 +577,7 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
         progress: 40,
         message: 'Loading map layers...'
       });
+      logger.debug('[useMap] Starting feature loading phase (40%)', 'useMap');
 
       // Start layer loading timer
       performanceMonitor.startTimer('layer-loading');
@@ -595,6 +596,8 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
       // Use shorter timeout since CORS errors will block immediately
       const FEATURE_LOAD_TIMEOUT = 45000; // 45 seconds timeout (reduced from 2 minutes)
       
+      logger.debug(`[useMap] Starting loadAndProcessFeatures with ${FEATURE_LOAD_TIMEOUT}ms timeout`, 'useMap');
+      
       // Start feature loading in background - don't block on it
       const featureLoadPromise = withTimeout(
         mapService.loadAndProcessFeatures(),
@@ -602,23 +605,31 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
         'Feature loading timed out. The server may be experiencing CORS or timeout issues.'
       ).catch(error => {
         logger.error('Feature loading failed or timed out', 'useMap', error);
-        console.warn('Feature loading failed. The map will continue with limited functionality:', error.message || error);
+        console.warn('[useMap] Feature loading failed. The map will continue with limited functionality:', error.message || error);
         return null; // Don't throw, just return null
       });
 
       // Non-critical operations with shorter timeouts - don't wait for these
+      logger.debug('[useMap] Starting non-critical operations (field verification, filtering test)', 'useMap');
       Promise.allSettled([
         withTimeout(
           mapService.verifyBayLayerFields(),
           15000, // 15 second timeout
           'Bay field verification timed out'
-        ).catch(() => null),
+        ).catch((error) => {
+          logger.debug('[useMap] Bay field verification failed (non-critical)', 'useMap');
+          return null;
+        }),
         withTimeout(
           mapService.testBayTypeFiltering('Green'),
           15000, // 15 second timeout
           'Bay filtering test timed out'
-        ).catch(() => null)
+        ).catch((error) => {
+          logger.debug('[useMap] Bay filtering test failed (non-critical)', 'useMap');
+          return null;
+        })
       ]).then(results => {
+        logger.debug('[useMap] Non-critical operations completed', 'useMap');
         results.forEach((result, index) => {
           if (result.status === 'rejected') {
             logger.warn(`Operation ${index} failed`, 'useMap', result.reason);
@@ -627,24 +638,33 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
       });
       
       // Wait for feature loading with a maximum wait time, then continue regardless
+      logger.debug(`[useMap] Waiting for feature loading (max ${FEATURE_LOAD_TIMEOUT}ms)`, 'useMap');
+      const featureLoadStartTime = Date.now();
+      
       try {
         await Promise.race([
           featureLoadPromise,
           new Promise<void>((resolve) => 
             setTimeout(() => {
-              console.warn('Feature loading timeout reached, continuing without it...');
+              const elapsed = Date.now() - featureLoadStartTime;
+              logger.warn(`[useMap] Feature loading timeout reached after ${elapsed}ms, continuing without it...`, 'useMap');
+              console.warn(`[useMap] Feature loading timeout reached after ${elapsed}ms, continuing without it...`);
               resolve();
             }, FEATURE_LOAD_TIMEOUT)
           )
         ]);
+        const elapsed = Date.now() - featureLoadStartTime;
+        logger.debug(`[useMap] Feature loading phase completed in ${elapsed}ms`, 'useMap');
       } catch (error) {
         // Ignore errors - continue anyway
-        logger.warn('Feature loading error, continuing anyway', 'useMap', error);
+        logger.warn('[useMap] Feature loading error, continuing anyway', 'useMap', error);
+        console.warn('[useMap] Feature loading error, continuing anyway:', error);
       }
       
       // Record layer loading time
       const layerLoadTime = performanceMonitor.endTimer('layer-loading');
       performanceMonitor.recordLayerLoadTime(layerLoadTime);
+      logger.debug(`[useMap] Layer loading phase completed, moving to preloading (60%)`, 'useMap');
 
       setLoadingProgress({
         phase: 'preloading',
@@ -652,16 +672,44 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
         message: 'Preloading map data...',
         details: 'Caching features for smooth navigation'
       });
+      console.log('[useMap] Progress: 60% - Starting preloading phase');
 
       // Start preloading timer
       performanceMonitor.startTimer('preloading');
 
-      // Preload all features to prevent unloading issues
-      await mapService.preloadAllFeatures();
+      // Preload all features to prevent unloading issues - with timeout and better error handling
+      logger.debug('[useMap] Starting preloadAllFeatures with 30s timeout', 'useMap');
+      const PRELOAD_TIMEOUT = 30000; // 30 second timeout
+      const preloadStartTime = Date.now();
+      
+      try {
+        await Promise.race([
+          mapService.preloadAllFeatures().catch(error => {
+            logger.warn('[useMap] preloadAllFeatures failed (non-critical)', 'useMap', error);
+            console.warn('[useMap] preloadAllFeatures failed, continuing:', error);
+            return null; // Don't throw
+          }),
+          new Promise<void>((resolve) => 
+            setTimeout(() => {
+              const elapsed = Date.now() - preloadStartTime;
+              logger.warn(`[useMap] Preloading timeout reached after ${elapsed}ms, continuing...`, 'useMap');
+              console.warn(`[useMap] Preloading timeout reached after ${elapsed}ms, continuing...`);
+              resolve();
+            }, PRELOAD_TIMEOUT)
+          )
+        ]);
+        const elapsed = Date.now() - preloadStartTime;
+        logger.debug(`[useMap] Preloading completed in ${elapsed}ms`, 'useMap');
+      } catch (error) {
+        logger.warn('[useMap] Preloading error, continuing anyway', 'useMap', error);
+        console.warn('[useMap] Preloading error, continuing anyway:', error);
+      }
       
       // Record preloading time
       const preloadTime = performanceMonitor.endTimer('preloading');
       performanceMonitor.recordPreloadTime(preloadTime);
+      logger.debug(`[useMap] Preloading phase completed, moving to data loading (70%)`, 'useMap');
+      console.log('[useMap] Progress: 70% - Starting data loading phase');
 
       setLoadingProgress({
         phase: 'loading-data',
@@ -671,17 +719,63 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
 
       // Start data loading timer
       performanceMonitor.startTimer('data-loading');
+      logger.debug('[useMap] Starting parking data loading operations', 'useMap');
+      console.log('[useMap] Starting parking data loading operations (getParkingLots, getMonitoredCarparks, getBayCounts)');
 
-      // Get all required data in parallel
-      const [lots, monitoredCarparks, bayCounts] = await Promise.all([
-        mapService.getParkingLots(),
-        mapService.getMonitoredCarparks(),
-        mapService.getBayCounts()
-      ]);
+      // Get all required data in parallel with timeouts
+      const DATA_LOAD_TIMEOUT = 30000; // 30 second timeout for data loading
+      const dataLoadStartTime = Date.now();
+      
+      logger.debug(`[useMap] Starting data loading operations with ${DATA_LOAD_TIMEOUT}ms timeout`, 'useMap');
+      console.log('[useMap] Starting data loading (getParkingLots, getMonitoredCarparks, getBayCounts)');
+      
+      let lots: string[] = [];
+      let monitoredCarparks: string[] = [];
+      let bayCounts: BayTypeCount[] = [];
+      
+      try {
+        [lots, monitoredCarparks, bayCounts] = await Promise.race([
+          Promise.all([
+            mapService.getParkingLots().catch(error => {
+              logger.warn('[useMap] getParkingLots failed, using empty array', 'useMap', error);
+              console.warn('[useMap] getParkingLots failed:', error);
+              return [] as string[];
+            }),
+            mapService.getMonitoredCarparks().catch(error => {
+              logger.warn('[useMap] getMonitoredCarparks failed, using empty array', 'useMap', error);
+              console.warn('[useMap] getMonitoredCarparks failed:', error);
+              return [] as string[];
+            }),
+            mapService.getBayCounts().catch(error => {
+              logger.warn('[useMap] getBayCounts failed, using empty array', 'useMap', error);
+              console.warn('[useMap] getBayCounts failed:', error);
+              return [] as BayTypeCount[];
+            })
+          ]),
+          new Promise<[string[], string[], BayTypeCount[]]>((resolve) => 
+            setTimeout(() => {
+              const elapsed = Date.now() - dataLoadStartTime;
+              logger.warn(`[useMap] Data loading timeout reached after ${elapsed}ms, using empty data`, 'useMap');
+              console.warn(`[useMap] Data loading timeout reached after ${elapsed}ms, using empty data`);
+              resolve([[], [], []]); // Return empty arrays on timeout
+            }, DATA_LOAD_TIMEOUT)
+          )
+        ]);
+        
+        const elapsed = Date.now() - dataLoadStartTime;
+        logger.debug(`[useMap] Data loading completed in ${elapsed}ms - lots: ${lots.length}, carparks: ${monitoredCarparks.length}, bayCounts: ${bayCounts.length}`, 'useMap');
+        console.log(`[useMap] Data loading completed in ${elapsed}ms - lots: ${lots.length}, carparks: ${monitoredCarparks.length}, bayCounts: ${bayCounts.length}`);
+      } catch (error) {
+        logger.error('[useMap] Data loading error, using empty data', 'useMap', error);
+        console.error('[useMap] Data loading error, using empty data:', error);
+        // Already initialized to empty arrays above, so continue
+      }
       
       // Record data loading time
       const dataLoadTime = performanceMonitor.endTimer('data-loading');
       performanceMonitor.recordDataLoadTime(dataLoadTime);
+      logger.debug(`[useMap] Data loading phase completed, updating state (90%)`, 'useMap');
+      console.log('[useMap] Progress: 90% - Updating state and setting up interactions');
 
       // Update all state in a single batch
       stateSetters.setParkingLots(lots);
@@ -701,14 +795,42 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
         progress: 90,
         message: 'Setting up map interactions...'
       });
+      logger.debug('[useMap] Updating parking state with loaded data', 'useMap');
+
+      // Update all state in a single batch
+      try {
+        stateSetters.setParkingLots(lots);
+        stateSetters.setMonitoredCarparks(monitoredCarparks);
+        stateSetters.setBayTypeCounts(bayCounts);
+        stateSetters.setTotalBayCounts(mapService.getTotalBayCounts());
+        stateSetters.setMonitoredBayCounts(mapService.getMonitoredBayCounts());
+        stateSetters.setFilteredTotalBayCounts(mapService.getTotalBayCounts(true));
+        stateSetters.setFilteredMonitoredBayCounts(mapService.getMonitoredBayCounts(true));
+        stateSetters.setIndividualBayClosedCounts(mapService.getIndividualBayClosedCounts());
+        
+        // Initialize closedBayCounts with individual bay closed counts
+        stateSetters.setClosedBayCounts(mapService.getIndividualBayClosedCounts());
+        logger.debug('[useMap] State updated successfully', 'useMap');
+      } catch (error) {
+        logger.error('[useMap] Error updating state', 'useMap', error);
+        console.error('[useMap] Error updating state:', error);
+      }
 
       // Set up optimized click handler
-      logger.info('Setting up click handler', 'useMap');
-      setupClickHandler(view);
-      logger.info('Click handler setup completed', 'useMap');
+      logger.info('[useMap] Setting up click handler', 'useMap');
+      console.log('[useMap] Setting up click handler');
+      try {
+        setupClickHandler(view);
+        logger.info('[useMap] Click handler setup completed', 'useMap');
+        console.log('[useMap] Click handler setup completed');
+      } catch (error) {
+        logger.error('[useMap] Error setting up click handler', 'useMap', error);
+        console.error('[useMap] Error setting up click handler:', error);
+      }
 
       isInitializedRef.current = true;
-      logger.info('Map initialization completed', 'useMap');
+      logger.info('[useMap] Map initialization completed successfully', 'useMap');
+      console.log('[useMap] Map initialization completed - setting progress to 100%');
 
       setLoadingProgress({
         phase: 'complete',
