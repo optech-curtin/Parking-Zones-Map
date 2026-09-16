@@ -73,6 +73,7 @@ export class MapService {
   private cachedMonitoredCounts: { [key: string]: number } = {};
   private cachedIndividualBayClosedCounts: { [key: string]: number } = {};
   private cachedParkingLotCounts: { [key: string]: BayTypeCount[] } = {};
+  private parkingZonesPromise: Promise<{ lots: string[]; monitoredCarparks: string[] }> | null = null;
   private cacheService: CacheService;
   private readonly PAGE_SIZE = 1000;
   private layerLoadPromises: Promise<void>[] = [];
@@ -239,38 +240,42 @@ export class MapService {
       return cachedResult;
     }
 
-    let allFeatures: __esri.Graphic[] = [];
-    let hasMore = true;
-    let start = 0;
-
     try {
-      while (hasMore) {
-        query.start = start;
-        query.num = pageSize;
-        
-        // Use retry logic for each page query
-        const result = await this.retryWithBackoff(
-          async () => {
-            const queryResult = await layer.queryFeatures(query);
-            if (!queryResult.features) {
-              throw new FeatureQueryError(
-                `No features returned from query for layer ${layer.id}`,
-                layer.id
-              );
-            }
-            return queryResult;
-          },
-          `Query page ${start / pageSize + 1} for layer ${layer.id}`
-        );
-        
-        allFeatures = [...allFeatures, ...result.features];
-        
-        if (result.features.length < pageSize) {
-          hasMore = false;
-        } else {
-          start += pageSize;
-        }
+      // Determine the total feature count first so all pages can be fetched
+      // in parallel instead of awaiting each page sequentially.
+      const count = await this.retryWithBackoff(
+        () => layer.queryFeatureCount(query),
+        `Query count for layer ${layer.id}`
+      );
+
+      const pageStarts: number[] = [];
+      for (let start = 0; start < count; start += pageSize) {
+        pageStarts.push(start);
       }
+
+      const pages = await Promise.all(
+        pageStarts.map(start => {
+          const pageQuery = query.clone();
+          pageQuery.start = start;
+          pageQuery.num = pageSize;
+
+          return this.retryWithBackoff(
+            async () => {
+              const queryResult = await layer.queryFeatures(pageQuery);
+              if (!queryResult.features) {
+                throw new FeatureQueryError(
+                  `No features returned from query for layer ${layer.id}`,
+                  layer.id
+                );
+              }
+              return queryResult;
+            },
+            `Query page ${start / pageSize + 1} for layer ${layer.id}`
+          );
+        })
+      );
+
+      const allFeatures = pages.flatMap(result => result.features);
 
       this.cacheService.set(cacheKey, allFeatures);
       logger.debug(`Cached query result: ${cacheKey}`, 'MapService');
@@ -285,11 +290,15 @@ export class MapService {
     }
   }
 
-  // Update the existing queryAllFeatures method to use the new pagination
+  // Update the existing queryAllFeatures method to use the new pagination.
+  // Fetches geometry too - the result is reused both for the count/status processing
+  // in loadAndProcessFeatures() and to build client-side replacement layers for the
+  // bay layers (see buildClientSideBayLayer), so pan/zoom never has to re-query the
+  // server for bay features again after this one-time load.
   private async queryAllFeatures(layer: FeatureLayer): Promise<__esri.Graphic[]> {
     try {
       const query = layer.createQuery();
-      query.returnGeometry = false;
+      query.returnGeometry = true;
       query.outFields = ['*'];
       query.where = '1=1';
       
@@ -301,6 +310,35 @@ export class MapService {
         error instanceof Error ? error : undefined
       );
     }
+  }
+
+  // Build a client-side FeatureLayer (backed by an in-memory `source` array instead
+  // of a `url`) holding features we've already fetched in full. A url-based
+  // FeatureLayer re-queries the server for whatever's in the current extent on every
+  // pan/zoom - fine for huge datasets, but for a bounded set like the bay layers
+  // (already fetched in full for the counts) it just means every pan waits on a fresh
+  // network round trip. A client-side layer renders straight from memory instead, so
+  // pan/zoom no longer touches the network at all after this one-time swap. It keeps
+  // the same renderer/fields/objectIdField as the layer it replaces, so callers that
+  // hold a reference to it (queryFeatures, definitionExpression, hitTest, etc.) don't
+  // need to change.
+  private buildClientSideBayLayer(sourceLayer: FeatureLayer, features: __esri.Graphic[], id: string): FeatureLayer | null {
+    if (!sourceLayer.fields || !sourceLayer.geometryType || !sourceLayer.spatialReference) {
+      logger.warn(`Cannot build client-side layer for ${id} - source layer metadata not loaded`, 'MapService');
+      return null;
+    }
+
+    return new FeatureLayer({
+      id,
+      title: sourceLayer.title,
+      source: features,
+      fields: sourceLayer.fields,
+      objectIdField: sourceLayer.objectIdField || 'OBJECTID',
+      geometryType: sourceLayer.geometryType,
+      spatialReference: sourceLayer.spatialReference,
+      renderer: sourceLayer.renderer,
+      visible: sourceLayer.visible
+    });
   }
 
   async initializeMap(container: HTMLDivElement): Promise<MapView> {
@@ -371,9 +409,6 @@ export class MapService {
 
       // Apply view optimizations after layers are loaded
       this.optimizeView(view);
-      
-      // Setup zoom optimization
-      this.setupZoomOptimization(view);
 
       this.view = view;
       logger.info('Map initialized successfully', 'MapService');
@@ -435,9 +470,6 @@ export class MapService {
           visible: true,
           // Prevent unloading when out of view
           persistenceEnabled: true,
-          // CRITICAL: Don't load all features - only load on demand/interaction
-          // This prevents loading all features at once (changed in SDK 4.20+)
-          loadAllFeatures: false,
           // Optimize rendering
           renderer: {
             type: "simple",
@@ -474,11 +506,8 @@ export class MapService {
         parkingLayer.outFields = ['Zone', 'status', 'isMonitored'];
         // Apply performance optimizations and prevent unloading
         parkingLayer.persistenceEnabled = true;
-        // CRITICAL: Don't load all features - only load on demand/interaction
-        // This prevents loading all features at once (changed in SDK 4.20+)
-        (parkingLayer as any).loadAllFeatures = false;
         this.parkingLayer = parkingLayer;
-        logger.debug('Existing parking layer loaded and configured (loadAllFeatures: false)', 'MapService');
+        logger.debug('Existing parking layer loaded and configured', 'MapService');
       } catch (error) {
         throw new LayerInitializationError(
           'Failed to load existing parking layer',
@@ -514,9 +543,6 @@ export class MapService {
         visible: true,
         // Enhanced unloading prevention
         persistenceEnabled: true,
-        // CRITICAL: Don't load all features - only load on demand/interaction
-        // This prevents loading all features at once (changed in SDK 4.20+)
-        loadAllFeatures: false,
         renderer: {
           type: "unique-value",
           field: "status",
@@ -551,9 +577,6 @@ export class MapService {
         visible: true,
         // Enhanced unloading prevention
         persistenceEnabled: true,
-        // CRITICAL: Don't load all features - only load on demand/interaction
-        // This prevents loading all features at once (changed in SDK 4.20+)
-        loadAllFeatures: false,
         renderer: {
           type: "unique-value",
           field: "status",
@@ -597,42 +620,9 @@ export class MapService {
       this.underBaysLayer.id = "underBaysLayer";
       this.baysLayer.id = "baysLayer";
 
-      // Apply additional unloading prevention properties after creation
-      try {
-        // Enhanced properties for underBaysLayer
-        // NOTE: loadAllFeatures is false by default (set in constructor) to prevent loading all features at once
-        // This prevents the SDK 4.20+ behavior of loading all features on layer load
-        (this.underBaysLayer as any).disableClientCaching = false;
-        (this.underBaysLayer as any).maxRecordCount = 0;
-        (this.underBaysLayer as any).unloadInvisibleFeatures = false;
-        (this.underBaysLayer as any).keepFeaturesInMemory = true;
-        (this.underBaysLayer as any).autoRefreshEnabled = false;
-        
-        // Enhanced properties for baysLayer
-        // NOTE: loadAllFeatures is false by default (set in constructor) to prevent loading all features at once
-        (this.baysLayer as any).disableClientCaching = false;
-        (this.baysLayer as any).maxRecordCount = 0;
-        (this.baysLayer as any).unloadInvisibleFeatures = false;
-        (this.baysLayer as any).keepFeaturesInMemory = true;
-        (this.baysLayer as any).autoRefreshEnabled = false;
-        
-        logger.debug('Enhanced unloading prevention properties applied to bay layers (loadAllFeatures: false to prevent mass loading)', 'MapService');
-      } catch {
-        logger.debug('Some enhanced unloading prevention properties not available', 'MapService');
-      }
-
       // Debug: Check the fields available in the bay layers
       logger.debug(`UnderBays Layer Fields: ${this.underBaysLayer.fields?.map(f => f.name).join(', ')}`, 'MapService');
       logger.debug(`Bays Layer Fields: ${this.baysLayer.fields?.map(f => f.name).join(', ')}`, 'MapService');
-
-      // Test query to see what status values exist
-      const testQuery = this.underBaysLayer.createQuery();
-      testQuery.where = '1=1';
-      testQuery.outFields = ['status', 'baytype', 'parkinglot'];
-      testQuery.num = 10;
-      const testResult = await this.underBaysLayer.queryFeatures(testQuery);
-      const statusValues = [...new Set(testResult.features.map(f => f.attributes.status))];
-      logger.debug(`Sample status values from underBays layer: ${statusValues.join(', ')}`, 'MapService');
 
       logger.debug('Bay layers initialized successfully', 'MapService');
 
@@ -705,45 +695,49 @@ export class MapService {
         return cachedResult;
       }
       
-      // Use pagination to get all features, not just the first 2000
-      let allFeatures: __esri.Graphic[] = [];
-      let hasMore = true;
-      let start = 0;
+      // Fetch the total count first, then request all pages in parallel
+      // instead of awaiting each page sequentially.
       const pageSize = 1000; // Use 1000 per page to get more than default 2000 limit
-      
-      while (hasMore) {
-        const query = layer.createQuery();
-        query.where = whereClause;
-        query.outFields = fields;
-        query.returnGeometry = false; // Don't return geometry for better performance
-        query.start = start;
-        query.num = pageSize;
-        
-        // Use retry logic for each page query
-        const result = await this.retryWithBackoff(
-          async () => {
-            const queryResult = await layer.queryFeatures(query);
-            if (!queryResult.features) {
-              throw new FeatureQueryError(
-                `No features returned from efficient query for layer ${layer.id}`,
-                layer.id
-              );
-            }
-            return queryResult;
-          },
-          `Efficient query page ${start / pageSize + 1} for layer ${layer.id}`
-        );
-        
-        allFeatures = [...allFeatures, ...result.features];
-        
-        // If we got fewer features than requested, we've reached the end
-        if (result.features.length < pageSize) {
-          hasMore = false;
-        } else {
-          start += pageSize;
-        }
+      const countQuery = layer.createQuery();
+      countQuery.where = whereClause;
+
+      const count = await this.retryWithBackoff(
+        () => layer.queryFeatureCount(countQuery),
+        `Efficient query count for layer ${layer.id}`
+      );
+
+      const pageStarts: number[] = [];
+      for (let start = 0; start < count; start += pageSize) {
+        pageStarts.push(start);
       }
-      
+
+      const pages = await Promise.all(
+        pageStarts.map(start => {
+          const query = layer.createQuery();
+          query.where = whereClause;
+          query.outFields = fields;
+          query.returnGeometry = false; // Don't return geometry for better performance
+          query.start = start;
+          query.num = pageSize;
+
+          return this.retryWithBackoff(
+            async () => {
+              const queryResult = await layer.queryFeatures(query);
+              if (!queryResult.features) {
+                throw new FeatureQueryError(
+                  `No features returned from efficient query for layer ${layer.id}`,
+                  layer.id
+                );
+              }
+              return queryResult;
+            },
+            `Efficient query page ${start / pageSize + 1} for layer ${layer.id}`
+          );
+        })
+      );
+
+      const allFeatures = pages.flatMap(result => result.features);
+
       this.cacheService.set(cacheKey, allFeatures);
       
       return allFeatures;
@@ -871,59 +865,95 @@ export class MapService {
   }
 
   // Update getParkingLots to use caching
-  async getParkingLots(): Promise<string[]> {
-    const cacheKey = 'parking_lots';
-    const cachedLots = this.cacheService.get<string[]>(cacheKey);
-    if (cachedLots) {
-      return cachedLots;
+  // getParkingLots() and getMonitoredCarparks() both come from the same parkingLayer
+  // query. That query (see fetchParkingZones) is unusually slow on this particular
+  // service - ~13s in testing for just 71 rows, vs ~0.6s for the much bigger bay
+  // layers - so it's important both callers share one in-flight request instead of
+  // firing it twice just because they were both called around the same time.
+  private async getOrFetchParkingZones(): Promise<{ lots: string[]; monitoredCarparks: string[] }> {
+    if (!this.parkingZonesPromise) {
+      this.parkingZonesPromise = this.fetchParkingZones();
     }
+    return this.parkingZonesPromise;
+  }
 
+  private async fetchParkingZones(): Promise<{ lots: string[]; monitoredCarparks: string[] }> {
     if (!this.parkingLayer) {
       throw new MapServiceError('Parking layer not initialized');
     }
 
     try {
       const query = this.parkingLayer.createQuery();
-      query.returnGeometry = false;
-      query.outFields = ['Zone'];
-      
+      query.where = '1=1';
+      query.outFields = ['Zone', 'isMonitored'];
+
       const result = await this.retryWithBackoff(
         async () => {
           const queryResult = await this.parkingLayer!.queryFeatures(query);
           if (!queryResult.features) {
             throw new FeatureQueryError(
-              'No features returned from parking lots query',
+              'No features returned from parking zones query',
               this.parkingLayer!.id
             );
           }
           return queryResult;
         },
-        `getParkingLots for layer ${this.parkingLayer.id}`
+        `getParkingLots/getMonitoredCarparks for layer ${this.parkingLayer.id}`
       );
-      
-      const lots = [...new Set(result.features.map(f => 
+
+      const lots = [...new Set(result.features.map(f =>
         this.cleanString((f.attributes as ParkingFeatureAttributes).Zone)
       ))];
-      
-      this.cacheService.set(cacheKey, lots);
-      return lots;
+      const monitoredCarparks = result.features
+        .filter(f => (f.attributes as ParkingFeatureAttributes).isMonitored === 'True')
+        .map(f => this.cleanString((f.attributes as ParkingFeatureAttributes).Zone));
+
+      this.cacheService.set('parking_lots', lots);
+      this.cacheService.set('monitored_carparks', monitoredCarparks);
+
+      // Bay counts are usually already loaded by the time this resolves (it's fired
+      // in the background alongside/after loadAndProcessFeatures) - patch the
+      // "monitored" counts in now that we know which zones qualify.
+      if (this.featuresLoaded) {
+        this.applyMonitoredParkingLots(new Set(monitoredCarparks));
+      }
+
+      return { lots, monitoredCarparks };
     } catch (error) {
+      this.parkingZonesPromise = null; // allow a later retry instead of caching the failure
       throw new FeatureQueryError(
-        'Failed to query parking lots',
+        'Failed to query parking zones',
         this.parkingLayer.id,
         error instanceof Error ? error : undefined
       );
     }
   }
 
+  async getParkingLots(): Promise<string[]> {
+    const cached = this.cacheService.get<string[]>('parking_lots');
+    if (cached) {
+      return cached;
+    }
+    const { lots } = await this.getOrFetchParkingZones();
+    return lots;
+  }
 
-
-  // Update getMonitoredCarparks to use caching
   async getMonitoredCarparks(): Promise<string[]> {
-    const cacheKey = 'monitored_carparks';
-    const cachedCarparks = this.cacheService.get<string[]>(cacheKey);
-    if (cachedCarparks) {
-      return cachedCarparks;
+    const cached = this.cacheService.get<string[]>('monitored_carparks');
+    if (cached) {
+      return cached;
+    }
+    const { monitoredCarparks } = await this.getOrFetchParkingZones();
+    return monitoredCarparks;
+  }
+
+  // Server-side "Closed" zones, cached so repeated renderer updates (e.g. on every
+  // parking lot click) don't re-query the parking layer each time.
+  async getClosedZones(): Promise<string[]> {
+    const cacheKey = 'closed_zones';
+    const cachedZones = this.cacheService.get<string[]>(cacheKey);
+    if (cachedZones) {
+      return cachedZones;
     }
 
     if (!this.parkingLayer) {
@@ -932,32 +962,30 @@ export class MapService {
 
     try {
       const query = this.parkingLayer.createQuery();
-      query.where = "isMonitored = 'True'";
+      query.where = "status = 'Closed'";
       query.outFields = ['Zone'];
-      
+
       const result = await this.retryWithBackoff(
         async () => {
           const queryResult = await this.parkingLayer!.queryFeatures(query);
           if (!queryResult.features) {
             throw new FeatureQueryError(
-              'No features returned from monitored carparks query',
+              'No features returned from closed zones query',
               this.parkingLayer!.id
             );
           }
           return queryResult;
         },
-        `getMonitoredCarparks for layer ${this.parkingLayer.id}`
+        `getClosedZones for layer ${this.parkingLayer.id}`
       );
-      
-      const carparks = result.features.map(f => 
-        this.cleanString((f.attributes as ParkingFeatureAttributes).Zone)
-      );
-      
-      this.cacheService.set(cacheKey, carparks);
-      return carparks;
+
+      const zones = result.features.map(f => f.attributes.Zone.trim());
+
+      this.cacheService.set(cacheKey, zones);
+      return zones;
     } catch (error) {
       throw new FeatureQueryError(
-        'Failed to query monitored carparks',
+        'Failed to query closed zones',
         this.parkingLayer.id,
         error instanceof Error ? error : undefined
       );
@@ -965,6 +993,9 @@ export class MapService {
   }
 
   async loadAndProcessFeatures(): Promise<void> {
+    // Declared outside the try block so the catch handler below (which reports how
+    // long loading ran before it failed) can still reach it.
+    const loadStartTime = Date.now();
     try {
       if (this.featuresLoaded) {
         logger.debug('Features already loaded, skipping', 'MapService');
@@ -972,119 +1003,57 @@ export class MapService {
       }
 
       logger.info('Starting to load and process features', 'MapService');
-      const loadStartTime = Date.now();
 
-      // First, get monitored parking lots from the parking layer
       if (!this.parkingLayer) {
         logger.error('Parking layer not initialized, cannot load features', 'MapService');
         throw new MapServiceError('Parking layer not initialized');
       }
-
-      logger.debug('Querying monitored parking lots from parking layer', 'MapService');
-      const parkingQuery = this.parkingLayer.createQuery();
-      parkingQuery.where = "isMonitored = 'True'";
-      parkingQuery.outFields = ['Zone'];
-      
-      // Add timeout wrapper around the entire retry operation
-      // Use shorter timeout since CORS will block immediately
-      const MONITORED_QUERY_TIMEOUT = 15000; // 15 second timeout for monitored query (reduced from 20s)
-      logger.debug(`Starting monitored parking lots query with ${MONITORED_QUERY_TIMEOUT}ms timeout`, 'MapService');
-      console.log(`[MapService] Starting monitored parking lots query (max ${MONITORED_QUERY_TIMEOUT}ms)`);
-      
-      let parkingResult: __esri.FeatureSet = { features: [] } as __esri.FeatureSet;
-      
-      try {
-        parkingResult = await Promise.race([
-          // Use shorter retry (1 retry instead of 2) for faster failure
-          this.retryWithBackoff(
-            async () => {
-              logger.debug('Attempting to query monitored parking lots', 'MapService');
-              const queryResult = await this.parkingLayer!.queryFeatures(parkingQuery);
-              if (!queryResult.features) {
-                throw new FeatureQueryError(
-                  'No features returned from monitored parking lots query',
-                  this.parkingLayer!.id
-                );
-              }
-              logger.debug(`Monitored parking lots query successful: ${queryResult.features.length} features`, 'MapService');
-              return queryResult;
-            },
-            `loadAndProcessFeatures - monitored parking lots query for layer ${this.parkingLayer.id}`,
-            1 // Only 1 retry for faster failure
-          ),
-          new Promise<__esri.FeatureSet>((_, reject) => 
-            setTimeout(() => {
-              const elapsed = Date.now() - loadStartTime;
-              logger.warn(`Monitored parking lots query timed out after ${elapsed}ms, using empty result`, 'MapService');
-              console.warn(`[MapService] Monitored parking lots query timed out after ${elapsed}ms`);
-              reject(new Error(`Monitored parking lots query timed out after ${MONITORED_QUERY_TIMEOUT}ms`));
-            }, MONITORED_QUERY_TIMEOUT)
-          )
-        ]);
-        logger.debug(`Monitored parking lots query completed: ${parkingResult.features.length} features`, 'MapService');
-      } catch (error) {
-        logger.warn('Monitored parking lots query failed, continuing with empty set', 'MapService', error);
-        console.warn('[MapService] Monitored parking lots query failed, continuing with empty set:', error);
-        // Already initialized to empty FeatureSet above
-      }
-      
-      const monitoredParkingLots = new Set(
-        parkingResult.features.map(f => 
-          this.cleanString((f.attributes as ParkingFeatureAttributes).Zone)
-        )
-      );
-
-      logger.info(`Found ${monitoredParkingLots.size} monitored parking lots`, 'MapService');
-
-      // Use the already initialized bay layers
       if (!this.underBaysLayer || !this.baysLayer) {
         logger.error('Bay layers not initialized, cannot load features', 'MapService');
         throw new MapServiceError('Bay layers not initialized');
       }
 
-      logger.info('Querying bay layers for features', 'MapService');
-      const bayQueryStartTime = Date.now();
-      
-      // Add timeout wrapper around bay layer queries
+      // Bay features only - which parking lots are "monitored" comes from a separate,
+      // much slower parkingLayer query (~13s for 71 rows in testing, vs ~0.6s for the
+      // much bigger bay layers - see fetchParkingZones). That's only needed for the
+      // monitored-count breakdown and the search dropdown, neither of which blocks the
+      // map itself, so it's intentionally NOT awaited here: applyMonitoredParkingLots()
+      // patches cachedMonitoredCounts in once getParkingLots()/getMonitoredCarparks()
+      // resolve, whenever that happens to be.
       const BAY_QUERY_TIMEOUT = 30000; // 30 second timeout for bay queries
-      logger.debug(`Starting bay layer queries with ${BAY_QUERY_TIMEOUT}ms timeout`, 'MapService');
-      
-      let underBaysFeatures: __esri.Graphic[] = [];
-      let baysFeatures: __esri.Graphic[] = [];
-      
-      try {
+
+      const loadBayFeatures = async (): Promise<[__esri.Graphic[], __esri.Graphic[]]> => {
+        logger.debug(`Starting bay layer queries with ${BAY_QUERY_TIMEOUT}ms timeout`, 'MapService');
+        const bayQueryStartTime = Date.now();
+
         const bayQueriesPromise = Promise.all([
-          this.queryAllFeatures(this.underBaysLayer).catch(error => {
+          this.queryAllFeatures(this.underBaysLayer!).catch(error => {
             logger.warn('UnderBays query failed, using empty array', 'MapService', error);
             return [] as __esri.Graphic[];
           }),
-          this.queryAllFeatures(this.baysLayer).catch(error => {
+          this.queryAllFeatures(this.baysLayer!).catch(error => {
             logger.warn('Bays query failed, using empty array', 'MapService', error);
             return [] as __esri.Graphic[];
           })
         ]);
-        
+
         const bayResults = await Promise.race([
           bayQueriesPromise,
-          new Promise<[__esri.Graphic[], __esri.Graphic[]]>((resolve) => 
+          new Promise<[__esri.Graphic[], __esri.Graphic[]]>((resolve) =>
             setTimeout(() => {
               const elapsed = Date.now() - bayQueryStartTime;
               logger.warn(`Bay layer queries timed out after ${elapsed}ms, using empty arrays`, 'MapService');
-              console.warn(`[MapService] Bay layer queries timed out after ${elapsed}ms, using empty arrays`);
               resolve([[], []]);
             }, BAY_QUERY_TIMEOUT)
           )
         ]);
-        
-        [underBaysFeatures, baysFeatures] = bayResults;
+
         const elapsed = Date.now() - bayQueryStartTime;
-        logger.info(`Loaded ${underBaysFeatures.length} under bays features and ${baysFeatures.length} bays features in ${elapsed}ms`, 'MapService');
-        console.log(`[MapService] Bay queries completed: ${underBaysFeatures.length} underBays, ${baysFeatures.length} bays`);
-      } catch (error) {
-        logger.error('Bay layer queries error, using empty arrays', 'MapService', error);
-        console.error('[MapService] Bay layer queries error, using empty arrays:', error);
-        // Already initialized to empty arrays above
-      }
+        logger.info(`Loaded ${bayResults[0].length} under bays features and ${bayResults[1].length} bays features in ${elapsed}ms`, 'MapService');
+        return bayResults;
+      };
+
+      const [underBaysFeatures, baysFeatures] = await loadBayFeatures();
 
       // Deduplicate features within each layer based on OBJECTID
       // This prevents counting the same feature twice if it appears multiple times in the query results
@@ -1115,7 +1084,28 @@ export class MapService {
       
       const uniqueUnderBays = deduplicateFeatures(underBaysFeatures, 'underBays');
       const uniqueBays = deduplicateFeatures(baysFeatures, 'bays');
-      
+
+      // Swap the bay layers to client-side (in-memory) versions now that we have every
+      // feature with geometry - this is what makes pan/zoom fast afterwards, since
+      // there's no longer a url-based layer re-querying the server per extent.
+      const swapStartTime = Date.now();
+      if (this.view?.map && this.underBaysLayer && this.baysLayer) {
+        const clientUnderBays = this.buildClientSideBayLayer(this.underBaysLayer, uniqueUnderBays, 'underBaysLayer');
+        const clientBays = this.buildClientSideBayLayer(this.baysLayer, uniqueBays, 'baysLayer');
+
+        if (clientUnderBays && clientBays) {
+          this.view.map.remove(this.underBaysLayer);
+          this.view.map.remove(this.baysLayer);
+          this.view.map.add(clientUnderBays);
+          this.view.map.add(clientBays);
+          this.underBaysLayer = clientUnderBays;
+          this.baysLayer = clientBays;
+          logger.info(`Swapped bay layers to client-side (in-memory) rendering in ${Date.now() - swapStartTime}ms`, 'MapService');
+        } else {
+          logger.warn('Could not swap bay layers to client-side rendering - keeping server-backed layers', 'MapService');
+        }
+      }
+
       // Initialize counts
       const totalCounts: { [key: string]: number } = {};
       const monitoredCounts: { [key: string]: number } = {};
@@ -1140,6 +1130,10 @@ export class MapService {
 
       logger.info(`Organized features into ${Object.keys(featuresByParkingLot).length} parking lots`, 'MapService');
       logger.debug(`Parking lots found: ${Object.keys(featuresByParkingLot).join(', ')}`, 'MapService');
+
+      // Empty for now - which zones are "monitored" isn't known yet (see comment
+      // above); applyMonitoredParkingLots() recomputes monitoredCounts once it is.
+      const monitoredParkingLots = new Set<string>();
 
       // Then process each parking lot's features
       Object.entries(featuresByParkingLot).forEach(([parkingLot, features]) => {
@@ -1346,6 +1340,31 @@ export class MapService {
     return filteredCounts;
   }
 
+  // Recomputes cachedMonitoredCounts from the bay features already grouped by parking
+  // lot in loadAndProcessFeatures() - called once the (slow, separately-fetched) list
+  // of monitored zones becomes available, without re-querying anything.
+  private applyMonitoredParkingLots(monitoredParkingLots: Set<string>): void {
+    const monitoredCounts: { [key: string]: number } = {};
+
+    Object.entries(this.cachedFeatures).forEach(([parkingLot, features]) => {
+      if (!monitoredParkingLots.has(parkingLot)) return;
+
+      features.forEach(feature => {
+        const attributes = feature.attributes as BayFeatureAttributes;
+        let bayType = attributes.baytype || 'Unknown';
+        if (!bayType.toLowerCase().startsWith('reserved_')) {
+          bayType = this.cleanString(bayType);
+        } else {
+          bayType = bayType.trim().replace(/['"]/g, '');
+        }
+        monitoredCounts[bayType] = (monitoredCounts[bayType] || 0) + 1;
+      });
+    });
+
+    this.cachedMonitoredCounts = monitoredCounts;
+    logger.info(`Applied monitored status to bay counts: ${Object.keys(monitoredCounts).length} bay types across ${monitoredParkingLots.size} monitored zones`, 'MapService');
+  }
+
   getMonitoredBayCounts(filterTemporary: boolean = false): { [key: string]: number } {
     if (!filterTemporary) {
       return this.cachedMonitoredCounts;
@@ -1471,448 +1490,45 @@ export class MapService {
     }
   }
 
-  // Add zoom change handler for layer optimization
-  setupZoomOptimization(view: MapView): void {
-    try {
-      // Import reactiveUtils for modern watch functionality
-      import('@arcgis/core/core/reactiveUtils').then(({ watch }) => {
-        // Use modern reactiveUtils.watch instead of deprecated view.watch
-        watch(() => view.zoom, (newZoom: number) => {
-          // No longer optimizing layer visibility based on zoom
-          logger.debug(`Zoom level changed to: ${newZoom}`, 'MapService');
-        });
-      }).catch((error) => {
-        logger.warn('Failed to import reactiveUtils for zoom watching', 'MapService', error instanceof Error ? error : undefined);
-      });
-
-      // Add event listeners to prevent unloading during navigation
-      view.on('drag', () => {
-        // Prevent unloading during drag operations
-        this.preventFeatureUnloading(view);
-      });
-
-      view.on('mouse-wheel', () => {
-        // Prevent unloading during zoom operations
-        this.preventFeatureUnloading(view);
-      });
-
-      view.on('double-click', () => {
-        // Prevent unloading during double-click zoom
-        this.preventFeatureUnloading(view);
-      });
-
-      logger.debug('Zoom optimization setup completed', 'MapService');
-    } catch (error) {
-      logger.warn('Failed to setup zoom optimization', 'MapService', error instanceof Error ? error : undefined);
-    }
-  }
-
-  // Prevent feature unloading during navigation
+  // Ensure feature layers keep their loaded features when panning/zooming out of view.
+  // persistenceEnabled is the one real ArcGIS Maps SDK setting for this; the rest of the
+  // properties this used to set (disableClientCaching, unloadInvisibleFeatures,
+  // keepFeaturesInMemory) don't exist on FeatureLayer/MapView and were no-ops.
   private preventFeatureUnloading(view: MapView): void {
     try {
       if (!view.map) {
         logger.warn('Map is not initialized on the view', 'MapService');
         return;
       }
-      
-      logger.debug('Configuring layers to prevent feature unloading', 'MapService');
-      
-      // Ensure all layers maintain their features
+
       view.map.layers.forEach(layer => {
         if (layer instanceof FeatureLayer) {
-          // Core persistence setting
           layer.persistenceEnabled = true;
-          
-          // Additional ArcGIS-specific properties to prevent unloading
-          try {
-            // NOTE: Don't set loadAllFeatures = true here - that would load all features at once (SDK 4.20+ behavior)
-            // We want features to load on-demand, not all at once
-            
-            // Disable client-side caching restrictions
-            (layer as any).disableClientCaching = false;
-            
-            // Set maximum features to prevent unloading
-            (layer as any).maxRecordCount = 0; // 0 means no limit
-            
-            // Disable feature unloading based on visibility
-            (layer as any).unloadInvisibleFeatures = false;
-            
-            // Keep features in memory even when not visible
-            (layer as any).keepFeaturesInMemory = true;
-            
-            // Disable automatic feature cleanup
-            (layer as any).autoRefreshEnabled = false;
-            
-            logger.debug(`Enhanced unloading prevention configured for layer: ${layer.id}`, 'MapService');
-          } catch {
-            logger.debug(`Some unloading prevention properties not available for layer ${layer.id}`, 'MapService');
-          }
         }
       });
-      
-      // Configure view-level settings to prevent feature unloading
-      try {
-        // Disable view-level feature unloading
-        (view as any).unloadInvisibleFeatures = false;
-        (view as any).keepFeaturesInMemory = true;
-        
-        // Set view to maintain all loaded features
-        view.constraints = {
-          ...view.constraints,
-          rotationEnabled: false,
-          snapToZoom: false
-        };
-        
-        logger.debug('View-level feature unloading prevention configured', 'MapService');
-              } catch {
-          logger.debug('Some view-level unloading prevention properties not available', 'MapService');
-        }
-      
+
       logger.debug('Feature unloading prevention configuration completed', 'MapService');
     } catch (error) {
       logger.warn('Failed to prevent feature unloading', 'MapService', error instanceof Error ? error : undefined);
     }
   }
 
-  // Preload all features to prevent unloading issues
-  async preloadAllFeatures(): Promise<void> {
-    try {
-      logger.debug('Preloading all features to prevent unloading', 'MapService');
-      
-      // Get all feature layers from the webmap and our additional layers
-      const allLayers: FeatureLayer[] = [];
-      
-      // Add our additional layers
-      if (this.parkingLayer) allLayers.push(this.parkingLayer);
-      if (this.underBaysLayer) allLayers.push(this.underBaysLayer);
-      if (this.baysLayer) allLayers.push(this.baysLayer);
-      
-      // Add all webmap layers
-      if (this.view && this.view.map) {
-        this.view.map.layers.forEach(layer => {
-          if (layer instanceof FeatureLayer) {
-            allLayers.push(layer);
-          }
-        });
-      }
-
-      // Apply aggressive unloading prevention BEFORE preloading
-      logger.debug('Applying aggressive unloading prevention to all layers', 'MapService');
-      allLayers.forEach(layer => {
-        try {
-          // Core persistence setting
-          layer.persistenceEnabled = true;
-          
-          // Apply ALL possible unloading prevention properties
-          const layerAny = layer as any;
-          
-          // NOTE: We intentionally DON'T set loadAllFeatures = true here because:
-          // 1. SDK 4.20+ changed behavior to load ALL features by default when loadAllFeatures = true
-          // 2. This causes massive timeouts with large datasets
-          // 3. We use queryFeatures() explicitly when we need all features instead
-          // Setting loadAllFeatures = false prevents automatic mass loading
-          
-          // Disable client-side caching restrictions
-          if (typeof layerAny.disableClientCaching !== 'undefined') {
-            layerAny.disableClientCaching = false;
-          }
-          
-          // Set maximum features to prevent unloading
-          if (typeof layerAny.maxRecordCount !== 'undefined') {
-            layerAny.maxRecordCount = 0; // 0 means no limit
-          }
-          
-          // Disable feature unloading based on visibility
-          if (typeof layerAny.unloadInvisibleFeatures !== 'undefined') {
-            layerAny.unloadInvisibleFeatures = false;
-          }
-          
-          // Keep features in memory even when not visible
-          if (typeof layerAny.keepFeaturesInMemory !== 'undefined') {
-            layerAny.keepFeaturesInMemory = true;
-          }
-          
-          // Disable automatic feature cleanup
-          if (typeof layerAny.autoRefreshEnabled !== 'undefined') {
-            layerAny.autoRefreshEnabled = false;
-          }
-          
-          // Additional ArcGIS-specific properties
-          if (typeof layerAny.refreshInterval !== 'undefined') {
-            layerAny.refreshInterval = 0; // No auto refresh
-          }
-          
-          if (typeof layerAny.visible !== 'undefined') {
-            layerAny.visible = true; // Keep visible
-          }
-          
-          logger.debug(`Applied aggressive unloading prevention to layer: ${layer.id}`, 'MapService');
-        } catch {
-          logger.debug(`Some unloading prevention properties not available for layer ${layer.id}`, 'MapService');
-        }
-      });
-      
-      // Enhanced preloading with progress tracking
-      const totalLayers = allLayers.length;
-      let completedLayers = 0;
-      
-      logger.debug(`Starting preload for ${totalLayers} layers:`, 'MapService');
-      allLayers.forEach((layer, index) => {
-        logger.debug(`Layer ${index + 1}: ${layer.id} (${layer.title || 'No title'})`, 'MapService');
-      });
-      
-      for (const layer of allLayers) {
-        try {
-          // Set layer persistence to prevent unloading
-          layer.persistenceEnabled = true;
-          
-          // Query all features to ensure they're loaded in memory
-          const query = layer.createQuery();
-          query.where = '1=1';
-          query.returnGeometry = true; // Keep geometry for better performance
-          query.outFields = ['*'];
-          // Note: maxRecordCount is not available in this version, will get all records by default
-          
-          const result = await layer.queryFeatures(query);
-          logger.debug(`Preloaded ${result.features.length} features from layer ${layer.id}`, 'MapService');
-          
-          // Cache features in memory for faster access
-          this.cachedFeatures[layer.id] = result.features;
-          
-          // Force features to stay loaded by adding them to layer graphics
-          try {
-            const layerAny = layer as any;
-            if (layerAny.graphics && Array.isArray(layerAny.graphics)) {
-              // Add all features to the layer's graphics collection to force them to stay loaded
-              result.features.forEach(feature => {
-                if (!layerAny.graphics.some((g: any) => g.attributes?.OBJECTID === feature.attributes?.OBJECTID)) {
-                  layerAny.graphics.add(feature);
-                }
-              });
-              logger.debug(`Forced ${result.features.length} features to stay loaded in layer ${layer.id}`, 'MapService');
-            }
-          } catch {
-            logger.debug(`Could not force features to graphics collection for layer ${layer.id}`, 'MapService');
-          }
-          
-          completedLayers++;
-          logger.debug(`Preloading progress: ${completedLayers}/${totalLayers} layers`, 'MapService');
-        } catch (error) {
-          logger.warn(`Failed to preload features from layer ${layer.id}`, 'MapService', error instanceof Error ? error : undefined);
-          completedLayers++;
-        }
-      }
-      
-      // Configure view for optimal performance and prevent unloading
-      if (this.view) {
-        // Enable feature caching
-        this.view.constraints = {
-          ...this.view.constraints,
-          rotationEnabled: false, // Disable rotation for better performance
-          snapToZoom: false // Disable snap to zoom for smoother experience
-        };
-        
-        // Apply aggressive view-level unloading prevention
-        try {
-          const viewAny = this.view as any;
-          
-          // Disable view-level feature unloading
-          if (typeof viewAny.unloadInvisibleFeatures !== 'undefined') {
-            viewAny.unloadInvisibleFeatures = false;
-          }
-          
-          if (typeof viewAny.keepFeaturesInMemory !== 'undefined') {
-            viewAny.keepFeaturesInMemory = true;
-          }
-          
-          // Disable any automatic cleanup
-          if (typeof viewAny.autoRefreshEnabled !== 'undefined') {
-            viewAny.autoRefreshEnabled = false;
-          }
-          
-          logger.debug('Applied aggressive view-level unloading prevention', 'MapService');
-        } catch {
-          logger.debug('Some view-level unloading prevention properties not available', 'MapService');
-        }
-        
-        // Set up view extent caching
-        this.setupViewExtentCaching();
-      }
-      
-      logger.debug(`Feature preloading completed: ${completedLayers}/${totalLayers} layers`, 'MapService');
-      
-      // Monitor feature unloading status after preloading
-      this.monitorFeatureUnloadingStatus();
-      
-      // Set up periodic monitoring to check if features are being unloaded (development only)
-      if (process.env.NODE_ENV !== 'production') {
-        setInterval(() => {
-          this.monitorFeatureUnloadingStatus();
-        }, 30000); // Check every 30 seconds
-      }
-    } catch (error) {
-      logger.error('Failed to preload features', 'MapService', error instanceof Error ? error : undefined);
-    }
-  }
-
-  // Enhanced view extent caching for better pan/zoom performance
-  private setupViewExtentCaching(): void {
-    if (!this.view) return;
-    
-    try {
-      // Disable continuous extent caching since we're preloading all features
-      // This was causing performance issues with continuous caching on every map move
-      logger.debug('View extent caching disabled - using preloaded features instead', 'MapService');
-    } catch (error) {
-      logger.warn('Failed to setup view extent caching', 'MapService', error instanceof Error ? error : undefined);
-    }
-  }
-
-  // Cache data for the current view extent - DISABLED
-  // This method is disabled because it was causing continuous caching on every map move
-  // We now use preloaded features instead for better performance
-  /*
-  private async cacheViewExtent(extent: __esri.Extent): Promise<void> {
-    try {
-      // Expand extent by 20% to preload adjacent areas
-      const expandedExtent = extent.clone();
-      const width = extent.xmax - extent.xmin;
-      const height = extent.ymax - extent.ymin;
-      
-      expandedExtent.xmin -= width * 0.1;
-      expandedExtent.xmax += width * 0.1;
-      expandedExtent.ymin -= height * 0.1;
-      expandedExtent.ymax += height * 0.1;
-      
-      // Preload features in expanded extent for all layers
-      const allLayers = this.getAllFeatureLayers();
-      
-      for (const layer of allLayers) {
-        try {
-          const query = layer.createQuery();
-          query.geometry = expandedExtent;
-          query.returnGeometry = true;
-          query.outFields = ['*'];
-          
-          // Use cache service for persistent storage
-          const cacheKey = `extent_${layer.id}_${extent.xmin.toFixed(4)}_${extent.ymin.toFixed(4)}`;
-          const cached = this.cacheService.get(cacheKey);
-          
-          if (!cached) {
-            const result = await layer.queryFeatures(query);
-            this.cacheService.set(cacheKey, result.features); // Cache using default TTL
-            logger.debug(`Cached ${result.features.length} features for extent in layer ${layer.id}`, 'MapService');
-          }
-        } catch (error) {
-          logger.debug(`Failed to cache extent for layer ${layer.id}`, 'MapService', error instanceof Error ? error : undefined);
-        }
-      }
-    } catch (error) {
-      logger.warn('Failed to cache view extent', 'MapService', error instanceof Error ? error : undefined);
-    }
-  }
-  */
-
-  // Monitor feature unloading status across all layers
-  private monitorFeatureUnloadingStatus(): void {
-    try {
-      if (!this.view || !this.view.map) return;
-      
-      const totalLayers = this.view.map.layers.length;
-      const featureLayers = this.view.map.layers.filter(layer => layer instanceof FeatureLayer);
-      
-      logger.debug(`Monitoring feature unloading status: ${featureLayers.length} feature layers out of ${totalLayers} total layers`, 'MapService');
-      
-      let totalFeatures = 0;
-      this.view.map.layers.forEach((layer, index) => {
-        if (layer instanceof FeatureLayer) {
-          const featureCount = (layer as any).graphics?.length || 0;
-          const cachedCount = this.cachedFeatures[layer.id]?.length || 0;
-          const isPersistent = (layer as any).persistenceEnabled;
-          const loadAllFeatures = (layer as any).loadAllFeatures;
-          const unloadInvisible = (layer as any).unloadInvisibleFeatures;
-          
-          totalFeatures += featureCount;
-          
-          // Check if features are being unloaded
-          if (cachedCount > 0 && featureCount < cachedCount) {
-            logger.warn(`⚠️ FEATURE UNLOADING DETECTED: Layer ${layer.id} has ${featureCount} features but cached ${cachedCount}`, 'MapService');
-          }
-          
-          logger.debug(`Layer ${index + 1}: ${layer.id} (${layer.title || 'No title'}): ${featureCount}/${cachedCount} features, persistent: ${isPersistent}, loadAll: ${loadAllFeatures}, unloadInvisible: ${unloadInvisible}`, 'MapService');
-        } else {
-          logger.debug(`Layer ${index + 1}: ${layer.id} (${layer.title || 'No title'}): ${layer.constructor.name}`, 'MapService');
-        }
-      });
-      
-      logger.debug(`Total features across all layers: ${totalFeatures}`, 'MapService');
-    } catch (error) {
-      logger.debug('Failed to monitor feature unloading status', 'MapService', error instanceof Error ? error : undefined);
-    }
-  }
-
-  // Get all feature layers for caching operations
-  private getAllFeatureLayers(): FeatureLayer[] {
-    const layers: FeatureLayer[] = [];
-    
-    if (this.parkingLayer) layers.push(this.parkingLayer);
-    if (this.underBaysLayer) layers.push(this.underBaysLayer);
-    if (this.baysLayer) layers.push(this.baysLayer);
-    
-    if (this.view && this.view.map) {
-      this.view.map.layers.forEach(layer => {
-        if (layer instanceof FeatureLayer) {
-          layers.push(layer);
-        }
-      });
-    }
-    
-    return layers;
-  }
-
-  // Configure all webmap layers to prevent unloading
+  // Enable persistence on every webmap layer so panning/zooming doesn't drop
+  // already-loaded features.
   private configureWebMapLayers(view: MapView): void {
     try {
       if (!view.map) {
         logger.warn('Map is not initialized on the view', 'MapService');
         return;
       }
-      logger.debug('Configuring webmap layers with enhanced unloading prevention', 'MapService');
-      
-      // Configure all layers in the webmap with comprehensive unloading prevention
+
       view.map.layers.forEach(layer => {
         if (layer instanceof FeatureLayer) {
-          // Core persistence setting
           layer.persistenceEnabled = true;
-          
-          // Apply comprehensive unloading prevention properties
-          try {
-            // Force all features to stay loaded
-            (layer as any).loadAllFeatures = true;
-            
-            // Disable client-side caching restrictions
-            (layer as any).disableClientCaching = false;
-            
-            // Set maximum features to prevent unloading
-            (layer as any).maxRecordCount = 0; // 0 means no limit
-            
-            // Disable feature unloading based on visibility
-            (layer as any).unloadInvisibleFeatures = false;
-            
-            // Keep features in memory even when not visible
-            (layer as any).keepFeaturesInMemory = true;
-            
-            // Disable automatic feature cleanup
-            (layer as any).autoRefreshEnabled = false;
-            
-            logger.debug(`Enhanced unloading prevention configured for webmap layer: ${layer.id}`, 'MapService');
-          } catch {
-            logger.debug(`Some unloading prevention properties not available for webmap layer ${layer.id}`, 'MapService');
-          }
         }
       });
-      
-      logger.debug('Webmap layers configured successfully with enhanced unloading prevention', 'MapService');
+
+      logger.debug('Webmap layers configured successfully', 'MapService');
     } catch (error) {
       logger.error('Failed to configure webmap layers', 'MapService', error instanceof Error ? error : undefined);
     }

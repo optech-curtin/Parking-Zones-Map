@@ -14,16 +14,9 @@ const MapViewComponent = dynamic(() => import('../components/MapView'), {
 // We only import ArcGIS types here—no runtime imports at the top level
 import type OAuthInfoType from "@arcgis/core/identity/OAuthInfo";
 import type IdentityManagerType from "@arcgis/core/identity/IdentityManager";
-import type PortalType from "@arcgis/core/portal/Portal";
-
-interface UserInfo {
-  fullName: string;
-  username: string;
-}
 
 export default function HomePage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [, setUserInfo] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [authProgress, setAuthProgress] = useState<{
     phase: 'initializing' | 'authenticating' | 'loading-map';
@@ -58,14 +51,12 @@ export default function HomePage() {
       });
 
       // Dynamically import identity modules
-      const [{ default: OAuthInfo }, { default: IdentityManager }, { default: Portal }] = await Promise.all([
+      const [{ default: OAuthInfo }, { default: IdentityManager }] = await Promise.all([
         import("@arcgis/core/identity/OAuthInfo"),
-        import("@arcgis/core/identity/IdentityManager"),
-        import("@arcgis/core/portal/Portal")
+        import("@arcgis/core/identity/IdentityManager")
       ]) as [
         { default: typeof OAuthInfoType },
-        { default: typeof IdentityManagerType },
-        { default: typeof PortalType }
+        { default: typeof IdentityManagerType }
       ];
 
       setAuthProgress({
@@ -92,25 +83,13 @@ export default function HomePage() {
       try {
         // First, check if we already have valid credentials
         await IdentityManager.checkSignInStatus(`${portalUrl}/sharing`);
-        
-        // If we get here, there is a valid credential in browser storage
-        const portal = new Portal({
-          authMode: "immediate",
-          url: portalUrl
-        });
-        await portal.load();
 
-        if (portal.user) {
-          const userInfo: UserInfo = {
-            fullName: portal.user.fullName ?? "Unknown User",
-            username: portal.user.username ?? "unknown"
-          };
-          setUserInfo(userInfo);
-          setIsAuthenticated(true);
-          console.log('ArcGIS authentication successful (existing credentials):', userInfo);
-        } else {
-          throw new Error('No user found in portal');
-        }
+        // A valid credential in browser storage is sufficient proof of authentication -
+        // loading the full Portal (org settings + user profile) just to discard it added
+        // an extra network round trip to every single page load for no benefit, since
+        // nothing in the app actually reads the fetched user profile.
+        setIsAuthenticated(true);
+        console.log('ArcGIS authentication successful (existing credentials)');
       } catch (error) {
         // No existing credentials - need to authenticate
         console.log('No existing credentials found, initiating OAuth flow...', error);
@@ -125,27 +104,9 @@ export default function HomePage() {
           // Get credentials - this will open OAuth popup/redirect
           // The promise resolves when the OAuth flow completes
           await IdentityManager.getCredential(`${portalUrl}/sharing`);
-          
-          console.log('Credential obtained, verifying...');
-          
-          // After getting credential, verify authentication
-          const portal = new Portal({
-            authMode: "immediate",
-            url: portalUrl
-          });
-          await portal.load();
 
-          if (portal.user) {
-            const userInfo: UserInfo = {
-              fullName: portal.user.fullName ?? "Unknown User",
-              username: portal.user.username ?? "unknown"
-            };
-            setUserInfo(userInfo);
-            setIsAuthenticated(true);
-            console.log('ArcGIS authentication successful (new credentials):', userInfo);
-          } else {
-            throw new Error('Portal loaded but no user found after authentication');
-          }
+          setIsAuthenticated(true);
+          console.log('ArcGIS authentication successful (new credentials)');
         } catch (credError) {
           console.error('Failed to get credentials:', credError);
           setAuthProgress({
@@ -159,6 +120,13 @@ export default function HomePage() {
         }
       }
 
+      // Strip the OAuth ?code=&state= callback params once we're done with them -
+      // left in place, they persist across reloads/hot-refreshes indefinitely (every
+      // subsequent load was carrying the same stale code param).
+      if (window.location.search) {
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+
       // Authentication successful
       setAuthProgress({
         phase: 'authenticating',
@@ -169,15 +137,14 @@ export default function HomePage() {
     }
 
     initArcGISAuth();
-  }, [portalUrl, appId, setUserInfo]);
+  }, [portalUrl, appId]);
 
   // Sign out (destroy stored credentials)
   const handleSignOut = useCallback(async () => {
     const { default: IdentityManager } = await import("@arcgis/core/identity/IdentityManager");
     IdentityManager.destroyCredentials();
     setIsAuthenticated(false);
-    setUserInfo(null);
-  }, [setUserInfo]);
+  }, []);
 
   // Show loading screen only during authentication, not after
   if (loading && !isAuthenticated) {

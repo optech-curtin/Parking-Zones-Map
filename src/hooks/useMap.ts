@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState, useCallback, useMemo, useLayoutEffect } from 'react';
 import { MapService } from '../services/MapService';
 import { useParking } from '../context/ParkingContext';
-import FeatureLayer from '@arcgis/core/layers/FeatureLayer';
-import type { ParkingFeatureAttributes, BayFeatureAttributes } from '../types';
+import Graphic from '@arcgis/core/Graphic';
+import type { ParkingFeatureAttributes, BayFeatureAttributes, BayTypeCount } from '../types';
 import { debounce } from '../utils/debounce';
 import { logger } from '../utils/logger';
 import { performanceMonitor } from '../utils/performance';
-
-const PARKING_LAYER_URL = "https://arcgis.curtin.edu.au/arcgis/rest/services/ParKam/ParKam/FeatureServer/4";
 
 export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
   const mapServiceRef = useRef<MapService | null>(null);
@@ -128,7 +126,7 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
         }
       };
 
-      const highlightGraphic = new (await import('@arcgis/core/Graphic')).default({
+      const highlightGraphic = new Graphic({
         geometry: bayGraphic.geometry,
         symbol: highlightSymbol
       });
@@ -166,16 +164,15 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
         }
 
         if (shouldZoom) {
-          const parkingLayer = new FeatureLayer({
-            url: PARKING_LAYER_URL
-          });
+          const parkingLayer = mapServiceRef.current?.getParkingLayer();
+          if (!parkingLayer) return;
 
           const query = parkingLayer.createQuery();
           query.where = `Zone = '${cleanedParkingLot}'`;
           query.returnGeometry = true;
-          
+
           const result = await parkingLayer.queryFeatures(query);
-          
+
           if (result.features.length > 0) {
             const view = mapServiceRef.current?.getView();
             if (view) {
@@ -609,34 +606,14 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
         return null; // Don't throw, just return null
       });
 
-      // Non-critical operations with shorter timeouts - don't wait for these
-      logger.debug('[useMap] Starting non-critical operations (field verification, filtering test)', 'useMap');
-      Promise.allSettled([
-        withTimeout(
-          mapService.verifyBayLayerFields(),
-          15000, // 15 second timeout
-          'Bay field verification timed out'
-        ).catch((error) => {
-          logger.debug('[useMap] Bay field verification failed (non-critical)', 'useMap');
-          return null;
-        }),
-        withTimeout(
-          mapService.testBayTypeFiltering('Green'),
-          15000, // 15 second timeout
-          'Bay filtering test timed out'
-        ).catch((error) => {
-          logger.debug('[useMap] Bay filtering test failed (non-critical)', 'useMap');
-          return null;
-        })
-      ]).then(results => {
-        logger.debug('[useMap] Non-critical operations completed', 'useMap');
-        results.forEach((result, index) => {
-          if (result.status === 'rejected') {
-            logger.warn(`Operation ${index} failed`, 'useMap', result.reason);
-          }
-        });
-      });
-      
+      // Note: this used to also kick off verifyBayLayerFields()/testBayTypeFiltering('Green')
+      // here as "non-critical" background calls. They're debug-only (their results were
+      // only ever logged, never used) but still issued real queries against the bay layers
+      // and testBayTypeFiltering briefly mutated the layers' definitionExpression and slept
+      // for a full second - all competing for bandwidth with the actual startup queries and
+      // risking a visible filter flicker. Removed; call them manually if you need to debug
+      // field names or filtering.
+
       // Wait for feature loading with a maximum wait time, then continue regardless
       logger.debug(`[useMap] Waiting for feature loading (max ${FEATURE_LOAD_TIMEOUT}ms)`, 'useMap');
       const featureLoadStartTime = Date.now();
@@ -657,7 +634,7 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
         logger.debug(`[useMap] Feature loading phase completed in ${elapsed}ms`, 'useMap');
       } catch (error) {
         // Ignore errors - continue anyway
-        logger.warn('[useMap] Feature loading error, continuing anyway', 'useMap', error);
+        logger.warn('[useMap] Feature loading error, continuing anyway', 'useMap', error instanceof Error ? error : undefined);
         console.warn('[useMap] Feature loading error, continuing anyway:', error);
       }
       
@@ -666,51 +643,11 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
       performanceMonitor.recordLayerLoadTime(layerLoadTime);
       logger.debug(`[useMap] Layer loading phase completed, moving to preloading (60%)`, 'useMap');
 
-      setLoadingProgress({
-        phase: 'preloading',
-        progress: 60,
-        message: 'Preloading map data...',
-        details: 'Caching features for smooth navigation'
-      });
-      console.log('[useMap] Progress: 60% - Starting preloading phase');
-
-      // Start preloading timer
-      performanceMonitor.startTimer('preloading');
-
-      // Preload all features to prevent unloading issues - with timeout and better error handling
-      logger.debug('[useMap] Starting preloadAllFeatures with 30s timeout', 'useMap');
-      const PRELOAD_TIMEOUT = 30000; // 30 second timeout
-      const preloadStartTime = Date.now();
-      
-      try {
-        await Promise.race([
-          mapService.preloadAllFeatures().catch(error => {
-            logger.warn('[useMap] preloadAllFeatures failed (non-critical)', 'useMap', error);
-            console.warn('[useMap] preloadAllFeatures failed, continuing:', error);
-            return null; // Don't throw
-          }),
-          new Promise<void>((resolve) => 
-            setTimeout(() => {
-              const elapsed = Date.now() - preloadStartTime;
-              logger.warn(`[useMap] Preloading timeout reached after ${elapsed}ms, continuing...`, 'useMap');
-              console.warn(`[useMap] Preloading timeout reached after ${elapsed}ms, continuing...`);
-              resolve();
-            }, PRELOAD_TIMEOUT)
-          )
-        ]);
-        const elapsed = Date.now() - preloadStartTime;
-        logger.debug(`[useMap] Preloading completed in ${elapsed}ms`, 'useMap');
-      } catch (error) {
-        logger.warn('[useMap] Preloading error, continuing anyway', 'useMap', error);
-        console.warn('[useMap] Preloading error, continuing anyway:', error);
-      }
-      
-      // Record preloading time
-      const preloadTime = performanceMonitor.endTimer('preloading');
-      performanceMonitor.recordPreloadTime(preloadTime);
-      logger.debug(`[useMap] Preloading phase completed, moving to data loading (70%)`, 'useMap');
-      console.log('[useMap] Progress: 70% - Starting data loading phase');
-
+      // Note: there used to be a separate "preload all features" pass here that
+      // re-queried the bay layers (with geometry, all fields) right after
+      // loadAndProcessFeatures had already paged through the same features. That
+      // doubled the network/parse cost of map load for no benefit - the counts and
+      // features loadAndProcessFeatures already computed are reused directly below.
       setLoadingProgress({
         phase: 'loading-data',
         progress: 70,
@@ -720,75 +657,51 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
       // Start data loading timer
       performanceMonitor.startTimer('data-loading');
       logger.debug('[useMap] Starting parking data loading operations', 'useMap');
-      console.log('[useMap] Starting parking data loading operations (getParkingLots, getMonitoredCarparks, getBayCounts)');
 
-      // Get all required data in parallel with timeouts
-      const DATA_LOAD_TIMEOUT = 30000; // 30 second timeout for data loading
-      const dataLoadStartTime = Date.now();
-      
-      logger.debug(`[useMap] Starting data loading operations with ${DATA_LOAD_TIMEOUT}ms timeout`, 'useMap');
-      console.log('[useMap] Starting data loading (getParkingLots, getMonitoredCarparks, getBayCounts)');
-      
-      let lots: string[] = [];
-      let monitoredCarparks: string[] = [];
+      // getBayCounts() is fast - it's derived from the bay data loadAndProcessFeatures
+      // already fetched above, no extra network call.
       let bayCounts: BayTypeCount[] = [];
-      
       try {
-        [lots, monitoredCarparks, bayCounts] = await Promise.race([
-          Promise.all([
-            mapService.getParkingLots().catch(error => {
-              logger.warn('[useMap] getParkingLots failed, using empty array', 'useMap', error);
-              console.warn('[useMap] getParkingLots failed:', error);
-              return [] as string[];
-            }),
-            mapService.getMonitoredCarparks().catch(error => {
-              logger.warn('[useMap] getMonitoredCarparks failed, using empty array', 'useMap', error);
-              console.warn('[useMap] getMonitoredCarparks failed:', error);
-              return [] as string[];
-            }),
-            mapService.getBayCounts().catch(error => {
-              logger.warn('[useMap] getBayCounts failed, using empty array', 'useMap', error);
-              console.warn('[useMap] getBayCounts failed:', error);
-              return [] as BayTypeCount[];
-            })
-          ]),
-          new Promise<[string[], string[], BayTypeCount[]]>((resolve) => 
-            setTimeout(() => {
-              const elapsed = Date.now() - dataLoadStartTime;
-              logger.warn(`[useMap] Data loading timeout reached after ${elapsed}ms, using empty data`, 'useMap');
-              console.warn(`[useMap] Data loading timeout reached after ${elapsed}ms, using empty data`);
-              resolve([[], [], []]); // Return empty arrays on timeout
-            }, DATA_LOAD_TIMEOUT)
-          )
-        ]);
-        
-        const elapsed = Date.now() - dataLoadStartTime;
-        logger.debug(`[useMap] Data loading completed in ${elapsed}ms - lots: ${lots.length}, carparks: ${monitoredCarparks.length}, bayCounts: ${bayCounts.length}`, 'useMap');
-        console.log(`[useMap] Data loading completed in ${elapsed}ms - lots: ${lots.length}, carparks: ${monitoredCarparks.length}, bayCounts: ${bayCounts.length}`);
+        bayCounts = await mapService.getBayCounts();
       } catch (error) {
-        logger.error('[useMap] Data loading error, using empty data', 'useMap', error);
-        console.error('[useMap] Data loading error, using empty data:', error);
-        // Already initialized to empty arrays above, so continue
+        logger.warn('[useMap] getBayCounts failed, using empty array', 'useMap', error instanceof Error ? error : undefined);
       }
-      
+
+      // getParkingLots()/getMonitoredCarparks() hit a separate parkingLayer query
+      // that's unusually slow on this service (~13s for 71 rows in testing) - don't
+      // hold the loading screen open for it. Fire it in the background; the search
+      // dropdown and "monitored" styling pick up the real values a few seconds later
+      // once it resolves (see the .then() below), instead of everything waiting on it.
+      const DATA_LOAD_TIMEOUT = 30000; // 30 second timeout, purely a safety net for this call
+      Promise.race([
+        Promise.all([
+          mapService.getParkingLots().catch(error => {
+            logger.warn('[useMap] getParkingLots failed, using empty array', 'useMap', error instanceof Error ? error : undefined);
+            return [] as string[];
+          }),
+          mapService.getMonitoredCarparks().catch(error => {
+            logger.warn('[useMap] getMonitoredCarparks failed, using empty array', 'useMap', error instanceof Error ? error : undefined);
+            return [] as string[];
+          })
+        ]),
+        new Promise<[string[], string[]]>((resolve) =>
+          setTimeout(() => resolve([[], []]), DATA_LOAD_TIMEOUT)
+        )
+      ]).then(([lots, monitoredCarparks]) => {
+        stateSetters.setParkingLots(lots);
+        stateSetters.setMonitoredCarparks(monitoredCarparks);
+        // MapService recomputes its monitored bay counts as a side effect of
+        // getMonitoredCarparks() resolving - pull the refreshed values in now.
+        stateSetters.setMonitoredBayCounts(mapService.getMonitoredBayCounts());
+        stateSetters.setFilteredMonitoredBayCounts(mapService.getMonitoredBayCounts(true));
+        logger.debug(`[useMap] Parking zones loaded in background - lots: ${lots.length}, monitored: ${monitoredCarparks.length}`, 'useMap');
+      });
+
       // Record data loading time
       const dataLoadTime = performanceMonitor.endTimer('data-loading');
       performanceMonitor.recordDataLoadTime(dataLoadTime);
       logger.debug(`[useMap] Data loading phase completed, updating state (90%)`, 'useMap');
       console.log('[useMap] Progress: 90% - Updating state and setting up interactions');
-
-      // Update all state in a single batch
-      stateSetters.setParkingLots(lots);
-      stateSetters.setMonitoredCarparks(monitoredCarparks);
-      stateSetters.setBayTypeCounts(bayCounts);
-      stateSetters.setTotalBayCounts(mapService.getTotalBayCounts());
-      stateSetters.setMonitoredBayCounts(mapService.getMonitoredBayCounts());
-      stateSetters.setFilteredTotalBayCounts(mapService.getTotalBayCounts(true));
-      stateSetters.setFilteredMonitoredBayCounts(mapService.getMonitoredBayCounts(true));
-      stateSetters.setIndividualBayClosedCounts(mapService.getIndividualBayClosedCounts());
-      
-      // Initialize closedBayCounts with individual bay closed counts
-      stateSetters.setClosedBayCounts(mapService.getIndividualBayClosedCounts());
 
       setLoadingProgress({
         phase: 'loading-data',
@@ -797,22 +710,21 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
       });
       logger.debug('[useMap] Updating parking state with loaded data', 'useMap');
 
-      // Update all state in a single batch
+      // Update all state in a single batch. parkingLots/monitoredCarparks/monitored
+      // bay counts start empty and are patched in by the background fetch above.
       try {
-        stateSetters.setParkingLots(lots);
-        stateSetters.setMonitoredCarparks(monitoredCarparks);
         stateSetters.setBayTypeCounts(bayCounts);
         stateSetters.setTotalBayCounts(mapService.getTotalBayCounts());
         stateSetters.setMonitoredBayCounts(mapService.getMonitoredBayCounts());
         stateSetters.setFilteredTotalBayCounts(mapService.getTotalBayCounts(true));
         stateSetters.setFilteredMonitoredBayCounts(mapService.getMonitoredBayCounts(true));
         stateSetters.setIndividualBayClosedCounts(mapService.getIndividualBayClosedCounts());
-        
+
         // Initialize closedBayCounts with individual bay closed counts
         stateSetters.setClosedBayCounts(mapService.getIndividualBayClosedCounts());
         logger.debug('[useMap] State updated successfully', 'useMap');
       } catch (error) {
-        logger.error('[useMap] Error updating state', 'useMap', error);
+        logger.error('[useMap] Error updating state', 'useMap', error instanceof Error ? error : undefined);
         console.error('[useMap] Error updating state:', error);
       }
 
@@ -824,7 +736,7 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
         logger.info('[useMap] Click handler setup completed', 'useMap');
         console.log('[useMap] Click handler setup completed');
       } catch (error) {
-        logger.error('[useMap] Error setting up click handler', 'useMap', error);
+        logger.error('[useMap] Error setting up click handler', 'useMap', error instanceof Error ? error : undefined);
         console.error('[useMap] Error setting up click handler:', error);
       }
 
@@ -865,18 +777,11 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
 
     const updateRenderer = async () => {
       try {
-        const query = parkingLayer.createQuery();
-        query.where = "status = 'Closed'";
-        query.outFields = ['Zone'];
-        
-        const result = await parkingLayer.queryFeatures(query);
-        const closedZones = result.features.map(f => f.attributes.Zone.trim());
-        
-        // Debug: Log all parking lot names from the parking layer
-        const allParkingLots = result.features.map(f => f.attributes.Zone);
-        logger.debug(`All parking lots in parking layer: ${allParkingLots.join(', ')}`, 'useMap');
+        // Cached by MapService so re-running this effect (e.g. on every parking lot
+        // click) doesn't re-query the server for the same closed-zone list each time.
+        const closedZones = await mapServiceRef.current!.getClosedZones();
         logger.debug(`Closed zones from parking layer: ${closedZones.join(', ')}`, 'useMap');
-        
+
         // Filter out temporary parking lots when baysInCap filter is active
         const filteredClosedZones = filters.baysInCap 
           ? closedZones.filter(zone => {
