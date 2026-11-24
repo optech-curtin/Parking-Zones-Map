@@ -343,12 +343,27 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
           }
 
           if (bayFeature && 'graphic' in bayFeature) {
-            const attributes = bayFeature.graphic.attributes as BayFeatureAttributes;
-            
-            // Validate attributes before processing
-            if (!attributes.objectid) {
-              logger.error('Missing objectid in bay attributes', 'useMap');
+            // The bay layers only load `status` for drawing, so look up this bay's full
+            // attributes (and exact geometry for the highlight) by object id.
+            const hitLayer = bayFeature.graphic.layer as __esri.FeatureLayer | null;
+            const oidField = hitLayer?.objectIdField || 'objectid';
+            const objectId = bayFeature.graphic.attributes?.[oidField] as number | undefined;
+            if (!hitLayer || objectId == null) {
+              logger.error('Missing object id on clicked bay', 'useMap');
               return;
+            }
+
+            let bayGraphic: __esri.Graphic = bayFeature.graphic;
+            try {
+              const details = await mapServiceRef.current?.getBayDetails(hitLayer, objectId);
+              if (details) bayGraphic = details;
+            } catch (error) {
+              logger.warn(`Failed to load details for bay ${objectId}`, 'useMap', error instanceof Error ? error : undefined);
+            }
+
+            const attributes = bayGraphic.attributes as BayFeatureAttributes;
+            if (attributes.objectid == null) {
+              attributes.objectid = objectId;
             }
             
             // Create a bay ID for display purposes
@@ -372,8 +387,8 @@ export function useMap(mapDivRef: React.RefObject<HTMLDivElement | null>) {
             // Store bay attributes for display
             setSelectedBayAttributes(attributes);
             
-            // Highlight the specific bay using the clicked graphic's geometry directly
-            await highlightBayWithGeometry(bayFeature.graphic);
+            // Highlight the specific bay using its full-resolution geometry
+            await highlightBayWithGeometry(bayGraphic);
             
             // Clear parking lot highlight since we're highlighting a bay instead
             setHighlightedParkingLot('');

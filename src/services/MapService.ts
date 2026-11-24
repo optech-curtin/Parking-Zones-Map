@@ -290,18 +290,20 @@ export class MapService {
     }
   }
 
-  // Update the existing queryAllFeatures method to use the new pagination.
-  // Fetches geometry too - the result is reused both for the count/status processing
-  // in loadAndProcessFeatures() and to build client-side replacement layers for the
-  // bay layers (see buildClientSideBayLayer), so pan/zoom never has to re-query the
-  // server for bay features again after this one-time load.
+  // Fields the bay counts need. Drawing is left to the url-based bay layers (which only
+  // ask the server for the `status` field the renderer uses, in quantized PBF tiles),
+  // so this one-time load is attribute-only: no geometry, and only the fields the
+  // counts read. Full attributes for a single bay are fetched on click instead
+  // (see getBayDetails).
+  private static readonly BAY_COUNT_FIELDS = ['parkinglot', 'baytype', 'status'];
+
   private async queryAllFeatures(layer: FeatureLayer): Promise<__esri.Graphic[]> {
     try {
       const query = layer.createQuery();
-      query.returnGeometry = true;
-      query.outFields = ['*'];
+      query.returnGeometry = false;
+      query.outFields = [layer.objectIdField, ...MapService.BAY_COUNT_FIELDS].filter(Boolean);
       query.where = '1=1';
-      
+
       return await this.queryFeaturesWithPagination(layer, query);
     } catch (error) {
       throw new FeatureQueryError(
@@ -312,33 +314,33 @@ export class MapService {
     }
   }
 
-  // Build a client-side FeatureLayer (backed by an in-memory `source` array instead
-  // of a `url`) holding features we've already fetched in full. A url-based
-  // FeatureLayer re-queries the server for whatever's in the current extent on every
-  // pan/zoom - fine for huge datasets, but for a bounded set like the bay layers
-  // (already fetched in full for the counts) it just means every pan waits on a fresh
-  // network round trip. A client-side layer renders straight from memory instead, so
-  // pan/zoom no longer touches the network at all after this one-time swap. It keeps
-  // the same renderer/fields/objectIdField as the layer it replaces, so callers that
-  // hold a reference to it (queryFeatures, definitionExpression, hitTest, etc.) don't
-  // need to change.
-  private buildClientSideBayLayer(sourceLayer: FeatureLayer, features: __esri.Graphic[], id: string): FeatureLayer | null {
-    if (!sourceLayer.fields || !sourceLayer.geometryType || !sourceLayer.spatialReference) {
-      logger.warn(`Cannot build client-side layer for ${id} - source layer metadata not loaded`, 'MapService');
-      return null;
-    }
+  // Fetch every attribute (and the exact geometry, for the highlight) of one bay on
+  // click. The bay layers only load `status` for drawing, so a hit-test graphic
+  // carries little more than its object id.
+  async getBayDetails(layer: FeatureLayer, objectId: number): Promise<__esri.Graphic | null> {
+    const query = layer.createQuery();
+    query.objectIds = [objectId];
+    query.outFields = ['*'];
+    query.returnGeometry = true;
+    // A bay type filter may be active; the clicked bay already passed it, so don't
+    // let the definitionExpression get in the way of looking it up by id.
+    query.where = '1=1';
+    const result = await this.retryWithBackoff(
+      () => layer.queryFeatures(query),
+      `Bay details for ${layer.id} #${objectId}`
+    );
+    return result.features[0] ?? null;
+  }
 
-    return new FeatureLayer({
-      id,
-      title: sourceLayer.title,
-      source: features,
-      fields: sourceLayer.fields,
-      objectIdField: sourceLayer.objectIdField || 'OBJECTID',
-      geometryType: sourceLayer.geometryType,
-      spatialReference: sourceLayer.spatialReference,
-      renderer: sourceLayer.renderer,
-      visible: sourceLayer.visible
-    });
+  // Shared bay type normalisation used for the counts and the bay type filter, so a
+  // type picked from the counts list matches the same bays.
+  private normalizeBayTypeKey(rawBayType: string | undefined): string {
+    const bayType = rawBayType || 'Unknown';
+    if (bayType.toLowerCase().startsWith('reserved_')) {
+      // Preserve the underscore so Reserved_* variants are counted separately.
+      return bayType.trim().replace(/['"]/g, '');
+    }
+    return this.cleanString(bayType);
   }
 
   async initializeMap(container: HTMLDivElement): Promise<MapView> {
@@ -535,14 +537,14 @@ export class MapService {
         throw new LayerInitializationError('Map is not initialized on the view', 'baysLayer');
       }
 
-      // Create the bay layers with enhanced performance optimizations
+      // Only the renderer's field is requested for drawing. With outFields ['*'] every
+      // tile the map fetches carries every attribute of every bay, which is what made
+      // pan/zoom slow; the SDK always adds the object id field itself. Details for a
+      // clicked bay come from getBayDetails().
       this.underBaysLayer = new FeatureLayer({
         url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays_Under/FeatureServer/0",
-        outFields: ['*'],
-        // Performance optimizations
+        outFields: ['status'],
         visible: true,
-        // Enhanced unloading prevention
-        persistenceEnabled: true,
         renderer: {
           type: "unique-value",
           field: "status",
@@ -572,11 +574,8 @@ export class MapService {
 
       this.baysLayer = new FeatureLayer({
         url: "https://arcgis.curtin.edu.au/arcgis/rest/services/Hosted/Park_Aid_Bays/FeatureServer/0",
-        outFields: ['*'],
-        // Performance optimizations
+        outFields: ['status'],
         visible: true,
-        // Enhanced unloading prevention
-        persistenceEnabled: true,
         renderer: {
           type: "unique-value",
           field: "status",
@@ -680,77 +679,6 @@ export class MapService {
     return bayLayers;
   }
 
-  // Efficient query with field selection for better performance
-  private async queryFeaturesEfficiently(
-    layer: FeatureLayer,
-    whereClause: string,
-    fields: string[] = ['*']
-  ): Promise<__esri.Graphic[]> {
-    try {
-      const cacheKey = `efficient_query_${layer.id}_${whereClause}_${fields.join(',')}`;
-      const cachedResult = this.cacheService.get<__esri.Graphic[]>(cacheKey);
-      
-      if (cachedResult) {
-        logger.debug(`Cache hit for efficient query: ${cacheKey}`, 'MapService');
-        return cachedResult;
-      }
-      
-      // Fetch the total count first, then request all pages in parallel
-      // instead of awaiting each page sequentially.
-      const pageSize = 1000; // Use 1000 per page to get more than default 2000 limit
-      const countQuery = layer.createQuery();
-      countQuery.where = whereClause;
-
-      const count = await this.retryWithBackoff(
-        () => layer.queryFeatureCount(countQuery),
-        `Efficient query count for layer ${layer.id}`
-      );
-
-      const pageStarts: number[] = [];
-      for (let start = 0; start < count; start += pageSize) {
-        pageStarts.push(start);
-      }
-
-      const pages = await Promise.all(
-        pageStarts.map(start => {
-          const query = layer.createQuery();
-          query.where = whereClause;
-          query.outFields = fields;
-          query.returnGeometry = false; // Don't return geometry for better performance
-          query.start = start;
-          query.num = pageSize;
-
-          return this.retryWithBackoff(
-            async () => {
-              const queryResult = await layer.queryFeatures(query);
-              if (!queryResult.features) {
-                throw new FeatureQueryError(
-                  `No features returned from efficient query for layer ${layer.id}`,
-                  layer.id
-                );
-              }
-              return queryResult;
-            },
-            `Efficient query page ${start / pageSize + 1} for layer ${layer.id}`
-          );
-        })
-      );
-
-      const allFeatures = pages.flatMap(result => result.features);
-
-      this.cacheService.set(cacheKey, allFeatures);
-      
-      return allFeatures;
-    } catch (error) {
-      logger.error(`Efficient query failed for layer ${layer.id} after retries`, 'MapService', error instanceof Error ? error : undefined);
-      throw new FeatureQueryError(
-        `Failed to query features efficiently from layer ${layer.id}`,
-        layer.id,
-        error instanceof Error ? error : undefined
-      );
-    }
-  }
-
   // Batch update renderer for better performance
   private async updateRendererBatch(rendererConfig: __esri.Renderer): Promise<void> {
     try {
@@ -782,51 +710,18 @@ export class MapService {
         return cachedResult;
       }
 
-      // Use efficient query to get parking lots with specific bay type
-      const bayLayers = this.getWebMapBayLayers();
-      const parkingLots = new Set<string>();
-      const rawParkingLots = new Set<string>(); // For debugging
-
-      logger.debug(`Searching for parking lots with bay type: ${bayType}`, 'MapService');
-      logger.debug(`Found ${bayLayers.length} bay layers to search`, 'MapService');
-
-      for (const layer of bayLayers) {
-        try {
-                  // Try different field name variations
-        const bayTypeField = layer.fields?.find(f => f.name.toLowerCase().includes('baytype'))?.name || 'baytype';
-        const parkingLotField = layer.fields?.find(f => f.name.toLowerCase().includes('parkinglot'))?.name || 'parkinglot';
-          
-          const features = await this.queryFeaturesEfficiently(
-            layer,
-            `${bayTypeField} = '${bayType}'`,
-            [parkingLotField, bayTypeField]
-          );
-
-          logger.debug(`Found ${features.length} features with bay type ${bayType} in layer ${layer.id}`, 'MapService');
-
-          features.forEach(feature => {
-            const rawParkingLot = feature.attributes[parkingLotField];
-            const cleanedParkingLot = this.cleanString(rawParkingLot);
-            
-            rawParkingLots.add(rawParkingLot);
-            
-            if (cleanedParkingLot) {
-              // Filter out temporary parking lots if requested
-              if (!filterTemporary || !this.isTemporaryParkingLot(cleanedParkingLot)) {
-                parkingLots.add(cleanedParkingLot);
-              } else {
-                logger.debug(`Filtering out temporary parking lot: ${cleanedParkingLot}`, 'MapService');
-              }
-            }
-            
-          });
-          
-        } catch (error) {
-          logger.warn(`Failed to query layer ${layer.id} for bay type ${bayType}`, 'MapService', error instanceof Error ? error : undefined);
-        }
-      }
-
-      const result = Array.from(parkingLots);
+      // Answered from the per-lot counts already in memory - every bay's lot and type
+      // was loaded once at startup, so there's no need to query the server again on
+      // each filter click.
+      await this.ensureFeaturesLoaded();
+      const wanted = this.normalizeBayTypeKey(bayType);
+      const result = Object.entries(this.cachedParkingLotCounts)
+        .filter(([lot, counts]) =>
+          lot !== 'Unknown' &&
+          counts.some(({ type, count }) => type === wanted && count > 0) &&
+          (!filterTemporary || !this.isTemporaryParkingLot(lot))
+        )
+        .map(([lot]) => lot);
       
       // Map to official parking lot names that match the parking layer
       const officialNames = await this.getOfficialParkingLotNames(result);
@@ -886,6 +781,7 @@ export class MapService {
       const query = this.parkingLayer.createQuery();
       query.where = '1=1';
       query.outFields = ['Zone', 'isMonitored'];
+      query.returnGeometry = false; // only attributes are read (27 KB -> 4 KB)
 
       const result = await this.retryWithBackoff(
         async () => {
@@ -964,6 +860,7 @@ export class MapService {
       const query = this.parkingLayer.createQuery();
       query.where = "status = 'Closed'";
       query.outFields = ['Zone'];
+      query.returnGeometry = false;
 
       const result = await this.retryWithBackoff(
         async () => {
@@ -1055,16 +952,15 @@ export class MapService {
 
       const [underBaysFeatures, baysFeatures] = await loadBayFeatures();
 
-      // Deduplicate features within each layer based on OBJECTID
+      // Deduplicate features within each layer based on the object id
       // This prevents counting the same feature twice if it appears multiple times in the query results
-      const deduplicateFeatures = (features: __esri.Graphic[], layerName: string): __esri.Graphic[] => {
+      const deduplicateFeatures = (features: __esri.Graphic[], layerName: string, oidField: string): __esri.Graphic[] => {
         const seen = new Set<number>();
         const unique: __esri.Graphic[] = [];
         let duplicateCount = 0;
-        
+
         features.forEach(feature => {
-          const attributes = feature.attributes as BayFeatureAttributes;
-          const objectId = attributes.OBJECTID;
+          const objectId = feature.attributes?.[oidField] as number | undefined;
           
           if (objectId && seen.has(objectId)) {
             duplicateCount++;
@@ -1082,29 +978,8 @@ export class MapService {
         return unique;
       };
       
-      const uniqueUnderBays = deduplicateFeatures(underBaysFeatures, 'underBays');
-      const uniqueBays = deduplicateFeatures(baysFeatures, 'bays');
-
-      // Swap the bay layers to client-side (in-memory) versions now that we have every
-      // feature with geometry - this is what makes pan/zoom fast afterwards, since
-      // there's no longer a url-based layer re-querying the server per extent.
-      const swapStartTime = Date.now();
-      if (this.view?.map && this.underBaysLayer && this.baysLayer) {
-        const clientUnderBays = this.buildClientSideBayLayer(this.underBaysLayer, uniqueUnderBays, 'underBaysLayer');
-        const clientBays = this.buildClientSideBayLayer(this.baysLayer, uniqueBays, 'baysLayer');
-
-        if (clientUnderBays && clientBays) {
-          this.view.map.remove(this.underBaysLayer);
-          this.view.map.remove(this.baysLayer);
-          this.view.map.add(clientUnderBays);
-          this.view.map.add(clientBays);
-          this.underBaysLayer = clientUnderBays;
-          this.baysLayer = clientBays;
-          logger.info(`Swapped bay layers to client-side (in-memory) rendering in ${Date.now() - swapStartTime}ms`, 'MapService');
-        } else {
-          logger.warn('Could not swap bay layers to client-side rendering - keeping server-backed layers', 'MapService');
-        }
-      }
+      const uniqueUnderBays = deduplicateFeatures(underBaysFeatures, 'underBays', this.underBaysLayer.objectIdField || 'OBJECTID');
+      const uniqueBays = deduplicateFeatures(baysFeatures, 'bays', this.baysLayer.objectIdField || 'OBJECTID');
 
       // Initialize counts
       const totalCounts: { [key: string]: number } = {};
@@ -1152,22 +1027,7 @@ export class MapService {
         features.forEach(feature => {
           const attributes = feature.attributes as BayFeatureAttributes;
           // Keep original bay type name but clean it (preserves Reserved_* variants for separate counting)
-          // Only clean special characters, but preserve underscores for Reserved_* types
-          let bayType = attributes.baytype || 'Unknown';
-          // Clean the bay type but preserve Reserved_* pattern
-          if (!bayType.toLowerCase().startsWith('reserved_')) {
-            bayType = this.cleanString(bayType);
-            // Handle case where ReservedName (from cleaned Reserved_Name) might exist
-            // Normalize ReservedName to Reserved_Name for consistency
-            if (bayType.toLowerCase() === 'reservedname' || bayType.toLowerCase().startsWith('reservedname')) {
-              // This was likely a Reserved_* variant that got cleaned - we can't recover the original
-              // but we should handle it consistently. For now, keep it as is but log a warning
-              logger.debug(`Found cleaned Reserved variant: ${bayType} (original: ${attributes.baytype})`, 'MapService');
-            }
-          } else {
-            // For Reserved_* types, just trim and clean quotes (preserve underscore for separate counting)
-            bayType = bayType.trim().replace(/['"]/g, '');
-          }
+          const bayType = this.normalizeBayTypeKey(attributes.baytype);
           const bayStatus = this.cleanString(String(attributes.status || 'Open'));
           
           // Update total counts (Reserved_* variants counted separately)
@@ -1273,15 +1133,7 @@ export class MapService {
       
       features.forEach(feature => {
         const attributes = feature.attributes as BayFeatureAttributes;
-        // Keep original bay type name but clean it (preserves Reserved_* variants for separate counting)
-        let bayType = attributes.baytype || 'Unknown';
-        // Clean the bay type but preserve Reserved_* pattern
-        if (!bayType.toLowerCase().startsWith('reserved_')) {
-          bayType = this.cleanString(bayType);
-        } else {
-          // For Reserved_* types, just trim and clean quotes (preserve underscore for separate counting)
-          bayType = bayType.trim().replace(/['"]/g, '');
-        }
+        const bayType = this.normalizeBayTypeKey(attributes.baytype);
         const bayStatus = this.cleanString(String(attributes.status || 'Open'));
         
         // Check for various closed status values
@@ -1351,12 +1203,7 @@ export class MapService {
 
       features.forEach(feature => {
         const attributes = feature.attributes as BayFeatureAttributes;
-        let bayType = attributes.baytype || 'Unknown';
-        if (!bayType.toLowerCase().startsWith('reserved_')) {
-          bayType = this.cleanString(bayType);
-        } else {
-          bayType = bayType.trim().replace(/['"]/g, '');
-        }
+        const bayType = this.normalizeBayTypeKey(attributes.baytype);
         monitoredCounts[bayType] = (monitoredCounts[bayType] || 0) + 1;
       });
     });
@@ -1542,28 +1389,9 @@ export class MapService {
         return bayTypeParkingLots;
       }
 
-      // Get all official parking lot names from the parking layer
-      const query = this.parkingLayer.createQuery();
-      query.returnGeometry = false;
-      query.outFields = ['Zone'];
-      const result = await this.retryWithBackoff(
-        async () => {
-          const queryResult = await this.parkingLayer!.queryFeatures(query);
-          if (!queryResult.features) {
-            throw new FeatureQueryError(
-              'No features returned from official parking lot names query',
-              this.parkingLayer!.id
-            );
-          }
-          return queryResult;
-        },
-        `getOfficialParkingLotNames for layer ${this.parkingLayer.id}`
-      );
-      
-      const officialNames = result.features.map(f => 
-        this.cleanString((f.attributes as ParkingFeatureAttributes).Zone)
-      );
-
+      // Official (cleaned) Zone names - the same list getParkingLots() already fetched
+      // and cached, so this doesn't re-query the parking layer on every filter click.
+      const officialNames = await this.getParkingLots();
 
 
       // Try to match bay type parking lots with official names
